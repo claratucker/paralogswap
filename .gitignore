@@ -1,1 +1,9 @@
-inst/doc
+.Renviron
+*.Rproj.user
+.Rproj.user/
+data/
+staging/
+*.h5ad
+*.rds
+.Rhistory
+.RData

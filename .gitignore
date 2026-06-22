@@ -7,3 +7,7 @@ staging/
 *.rds
 .Rhistory
 .RData
+
+Rplots.pdf
+.Rproj.user
+assessment_*.log

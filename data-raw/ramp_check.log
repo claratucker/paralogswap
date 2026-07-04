@@ -1,0 +1,72 @@
+
+=== CHECK 0: lemur in Ensembl? ===
+                  dataset                             description    version
+106 mmurinus_gene_ensembl            Mouse Lemur genes (Mmur_3.0)   Mmur_3.0
+156   psimus_gene_ensembl Greater bamboo lemur genes (Prosim_1.0) Prosim_1.0
+Using lemur dataset: mmurinus_gene_ensembl 
+Ensembl release: Ensembl Genes 116 
+
+=== CHECK 1: RAMP genes present per species? ===
+
+--- RAMP genes in human (by symbol) ---
+  ensembl_gene_id external_gene_name chromosome_name start_position
+1 ENSG00000122679              RAMP3               7       45157648
+2 ENSG00000131477              RAMP2              17       42758447
+3 ENSG00000132329              RAMP1               2      237858893
+
+--- RAMP genes in lemur (by symbol) ---
+     ensembl_gene_id external_gene_name chromosome_name start_position
+1 ENSMICG00000047662              RAMP1               8         468808
+2 ENSMICG00000032638              RAMP3              11       97642422
+3 ENSMICG00000028500              RAMP2              16       31251059
+
+--- RAMP genes in mouse (by symbol) ---
+     ensembl_gene_id external_gene_name chromosome_name start_position
+1 ENSMUSG00000034353              Ramp1               1       91107540
+2 ENSMUSG00000041046              Ramp3              11        6608511
+3 ENSMUSG00000001240              Ramp2              11      101136358
+
+=== CHECK 2: human->lemur and human->mouse orthology types ===
+
+--- human -> lemur homologs (with ortholog_type) ---
+  ensembl_gene_id external_gene_name mmurinus_homolog_ensembl_gene
+1 ENSG00000122679              RAMP3            ENSMICG00000032638
+2 ENSG00000131477              RAMP2            ENSMICG00000028500
+3 ENSG00000132329              RAMP1            ENSMICG00000047662
+  mmurinus_homolog_associated_gene_name mmurinus_homolog_orthology_type
+1                                 RAMP3                ortholog_one2one
+2                                 RAMP2                ortholog_one2one
+3                                 RAMP1                ortholog_one2one
+  mmurinus_homolog_perc_id mmurinus_homolog_orthology_confidence
+1                  56.0811                                     1
+2                  82.8571                                     1
+3                  73.6487                                     1
+
+--- human -> mouse homologs (with ortholog_type) ---
+  ensembl_gene_id external_gene_name mmusculus_homolog_ensembl_gene
+1 ENSG00000122679              RAMP3             ENSMUSG00000041046
+2 ENSG00000131477              RAMP2                               
+3 ENSG00000132329              RAMP1             ENSMUSG00000034353
+  mmusculus_homolog_associated_gene_name mmusculus_homolog_orthology_type
+1                                  Ramp3                 ortholog_one2one
+2                                                                        
+3                                  Ramp1                 ortholog_one2one
+  mmusculus_homolog_perc_id mmusculus_homolog_orthology_confidence
+1                   83.7838                                      1
+2                        NA                                     NA
+3                   37.8378                                      0
+
+
+================= GO / NO-GO SUMMARY =================
+For the 3-species RAMP validation to be reachable, you want to see:
+  - each human RAMP1/2/3 with a lemur homolog and a mouse homolog
+  - ortholog_type that is interpretable (one2one / one2many / many2many)
+  - lemur gene names that are real symbols, not only LOC… placeholders
+  - reasonable perc_id (not near-zero)
+
+If lemur RAMP homologs are missing or all LOC/ambiguous: the finding may
+not be cleanly reproducible from Ensembl homology alone — that is itself a
+real result (it's what Ezran flag), but it changes the validation plan.
+=====================================================
+
+Saved raw pulls to data-raw/ramp_check_result.rds

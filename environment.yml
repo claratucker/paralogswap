@@ -1,24 +1,23 @@
 name: seurat-env
 channels:
   - conda-forge
-  - defaults
-
+  - bioconda
 dependencies:
-  - r-base=4.3.*
-  - r-seurat=5.*
+  - r-base=4.3.3
+  - r-seurat=5.3.0
   - r-tidyverse
-  - r-data.table
-  - r-xml2
-  - r-png
+  - r-devtools
+  - r-usethis
+  - r-remotes
+  - r-biocmanager
   - r-igraph
-  - r-httpuv
-  - r-shiny
-  - r-rmarkdown
-  - r-reticulate
-
-  # system libraries (keep minimal, required for R packages)
-  - libxml2
-  - libcurl
-  - openssl
-  - zlib
-  - pandoc
+  - r-nloptr
+  - r-lme4
+  - r-mice
+  - r-weights
+  - r-weightedcluster
+  - r-aws.s3
+  - bioconductor-biomart
+  # SuperCell is GitHub-only — not installable via conda.
+  # After creating this env, run:
+  #   Rscript -e 'remotes::install_github("GfellerLab/SuperCell@f0a041e")'

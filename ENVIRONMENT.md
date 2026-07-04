@@ -78,19 +78,3 @@ DimPlot(obj, reduction = "pca")
 
 Seurat v5 loads and the preprocessing pipeline runs cleanly in conda-managed
 R 4.3.3, with no compilation fallback or missing-library errors.
-# Paralogswap Environment
-
-## System
-- Conda environment: seurat-env
-- R version: 4.3.3
-- Seurat: 5.x (conda-forge)
-
-## Reproducibility
-All dependencies are installed via Conda.
-
-## Activation
-conda activate seurat-env
-R
-
-## Validation
-Seurat pipeline test (CreateSeuratObject → RunPCA) passes successfully.

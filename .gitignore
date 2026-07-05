@@ -11,3 +11,8 @@ staging/
 Rplots.pdf
 .Rproj.user
 assessment_*.log
+*.bak
+*.bak
+tests/manual/plots/
+*.bak
+tests/manual/plots/

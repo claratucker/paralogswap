@@ -150,6 +150,8 @@ out <- do.call(rbind, rows)
     rownames(out) <- NULL
     out <- out[order(-out$delta_r), ]
   }
+ attr(out, "params") <- list(delta_threshold = delta_threshold,
+                              require_ortholog = require_ortholog)
   class(out) <- c("substitutions", "data.frame")
   out
 }

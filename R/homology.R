@@ -237,6 +237,8 @@ summary.homology_graph <- function(object, ...) {
 #'   species stacked), or NULL.
 #' @param species_a,species_b Focal and target species prefixes.
 #' @param corrections Optional user edge table.
+#' @param mirror Optional Ensembl mirror: one of "useast", "uswest", "asia".
+#'   Can be faster/more reliable than the default www.ensembl.org for large pulls.
 #' @param min_perc_id,min_confidence Filters (see build_homology_graph).
 #' @param verbose Passed to as_homology_graph.
 #' @return A homology_graph.
@@ -351,8 +353,10 @@ assemble_homology_edges <- function(ortholog_edges, paralog_edges,
 build_homology_graph <- function(species_a, species_b,
                                  genes = NULL,
                                  ensembl_release = NULL,
+                                 mirror = NULL,
                                  id_type = c("ensembl", "symbol"),
                                  corrections = NULL,
+                                 include_paralogs = TRUE,
                                  min_perc_id = NULL,
                                  min_confidence = c("low", "high"),
                                  verbose = TRUE) {
@@ -367,14 +371,13 @@ build_homology_graph <- function(species_a, species_b,
   id_attr <- filt
   name_attr <- "external_gene_name"
 
-  connect <- function(sp) {
-    if (is.null(ensembl_release)) {
-      biomaRt::useEnsembl("genes", dataset = paste0(sp, "_gene_ensembl"))
-    } else {
-      biomaRt::useEnsembl("genes", dataset = paste0(sp, "_gene_ensembl"),
-                          version = ensembl_release)
-    }
+connect <- function(sp) {
+    args <- list(biomart = "genes", dataset = paste0(sp, "_gene_ensembl"))
+    if (!is.null(ensembl_release)) args$version <- ensembl_release
+    if (!is.null(mirror))          args$mirror  <- mirror
+    do.call(biomaRt::useEnsembl, args)
   }
+
   if (isTRUE(verbose)) message("Connecting to Ensembl (", species_a,
                                ", ", species_b, ") ...")
   mart_a <- connect(species_a)
@@ -466,16 +469,15 @@ build_homology_graph <- function(species_a, species_b,
   o_ba <- pull_orthologs(mart_b, species_b, species_a,
                          if (is.null(genes)) NULL else b_ids)
 
-  if (isTRUE(verbose)) message("Pulling paralogs (both species) ...")
-  # Paralogs of A's genes, and of B's ortholog partners.
-  a_ids <- genes
-  p_a <- pull_paralogs(mart_a, species_a, a_ids)
-  p_b <- pull_paralogs(mart_b, species_b, b_ids)
 
-if (isTRUE(verbose)) message("Pulling paralogs (both species) ...")
-  a_ids <- genes
-  p_a <- pull_paralogs(mart_a, species_a, a_ids)
-  p_b <- pull_paralogs(mart_b, species_b, b_ids)
+if (isTRUE(include_paralogs)) {
+    if (isTRUE(verbose)) message("Pulling paralogs (both species) ...")
+    a_ids <- genes
+    p_a <- pull_paralogs(mart_a, species_a, a_ids)
+    p_b <- pull_paralogs(mart_b, species_b, b_ids)
+  } else {
+    p_a <- NULL; p_b <- NULL
+  }
 
   ortholog_edges <- do.call(rbind, Filter(Negate(is.null), list(o_ab, o_ba)))
   paralog_edges  <- do.call(rbind, Filter(Negate(is.null), list(p_a, p_b)))

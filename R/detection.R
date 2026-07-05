@@ -139,8 +139,17 @@ detect_substitutions <- function(homolog_correlations,
       flagged = delta >= delta_threshold,
       stringsAsFactors = FALSE)
   }
-  out <- do.call(rbind, rows); rownames(out) <- NULL
-  out <- out[order(-out$delta_r), ]
+out <- do.call(rbind, rows)
+  if (is.null(out) || nrow(out) == 0) {
+    out <- data.frame(
+      gene = character(0), ortholog = character(0),
+      best_paralog = character(0), r_ortholog = numeric(0),
+      r_paralog = numeric(0), delta_r = numeric(0),
+      flagged = logical(0), stringsAsFactors = FALSE)
+  } else {
+    rownames(out) <- NULL
+    out <- out[order(-out$delta_r), ]
+  }
   class(out) <- c("substitutions", "data.frame")
   out
 }

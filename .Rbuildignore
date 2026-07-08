@@ -2,3 +2,9 @@
 ^renv$
 ^renv\.lock$
 ^LICENSE\.md$
+^data-raw$
+^ENVIRONMENT\.md$
+^ENVIRONMENT_sessionInfo\.txt$
+^conda-spec\.txt$
+^rebuild_test\.sh$
+^assessment_20260622\.log$

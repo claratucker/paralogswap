@@ -47,8 +47,8 @@ test_that("vector resolution produces per-resolution cluster columns", {
 test_that("single merged object is split by species_col", {
   a <- make_toy(); b <- make_toy(seed = 2)
   # distinct cell names so merge doesn't rename
-  a <- RenameCells(a, add.cell.id = "A")
-  b <- RenameCells(b, add.cell.id = "B")
+  a <- Seurat::RenameCells(a, add.cell.id = "A")
+  b <- Seurat::RenameCells(b, add.cell.id = "B")
   a$species <- "sp_a"; b$species <- "sp_b"
   merged <- merge(a, b)
   # Seurat 5 splits counts into per-object layers after merge; rejoin if available

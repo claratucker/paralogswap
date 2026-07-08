@@ -339,7 +339,8 @@ assemble_homology_edges <- function(ortholog_edges, paralog_edges,
 #'   confidence. \code{"low"} keeps all; \code{"high"} keeps only confidence-1
 #'   calls. Default \code{"low"} (keep everything, let the user filter).
 #' @param verbose Print progress and the construction message. Default TRUE.
-#'
+#' @param mirror Optional biomaRt mirror (e.g. "useast"); NULL uses the default host.
+#' @param include_paralogs Logical; if FALSE, skip the paralog pull (orthologs only).
 #' @return A \code{homology_graph}.
 #'
 #' @examples

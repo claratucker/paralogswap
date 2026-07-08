@@ -117,6 +117,7 @@ build_metacells <- function(clusters,
 }
 
 #' @export
+#' @importFrom stats median
 summary.metacells <- function(object, ...) {
   p <- attr(object, "params")
   m <- object$meta

@@ -10,9 +10,11 @@ as_homology_graph(edge_df, verbose = TRUE)
 \method{summary}{homology_graph}(object, ...)
 }
 \arguments{
-\item{edge_df}{A \code{data.frame} containing at least \code{gene_a},
-\code{gene_b}, and \code{relationship}. \code{duplication_level} and
-\code{seq_similarity} are added as \code{NA} if absent.}
+\item{edge_df}{A \code{data.frame} with at least \code{gene_a},
+\code{gene_b}, \code{relationship}, and \code{ortholog_type}. Optional
+columns (\code{duplication_level}, \code{perc_id}, \code{confidence},
+\code{source}) are added as \code{NA}/\code{"manual"} if absent.
+\code{ambiguous} is always (re)derived from \code{ortholog_type}.}
 
 \item{verbose}{Print a brief construction message. Default \code{TRUE}.}
 
@@ -35,29 +37,35 @@ A \code{homology_graph} is a \code{data.frame} (with class
 \item{gene_a}{character. Gene identifier in species A (the focal species;
 edges are directed A to B).}
 \item{gene_b}{character. Gene identifier in species B.}
-\item{relationship}{factor with levels \code{"ortholog"},
-\code{"paralog"}, and \code{"unclassified"}. Unclassified pairs are
-sequence-similar homologs that are neither assigned ortholog nor
-paralog; they are carried through the pipeline but not scored for
-substitution (Stage 5).}
-\item{duplication_level}{character or \code{NA}. Taxonomic level of the most
-recent common ancestor at which the pair shares an orthology group;
-used to stratify paralogs by duplication age.}
-\item{seq_similarity}{numeric in \code{[0, 1]} or \code{NA}. Optional
-sequence-similarity weight for the edge.}
+\item{relationship}{factor with levels \code{"ortholog"} and
+\code{"paralog"}, read directly from Ensembl's orthology type.}
+\item{ortholog_type}{factor with levels \code{"one2one"},
+\code{"one2many"}, \code{"many2many"}, and \code{NA} for within-species
+paralog edges. Taken from Ensembl Compara; drives \code{ambiguous}.}
+\item{duplication_level}{character or \code{NA}. Taxonomic level of the
+duplication node (from the gene tree / Compara); used to stratify
+paralogs by duplication age.}
+\item{perc_id}{numeric in \code{[0, 100]} or \code{NA}. Ensembl homolog
+percent identity.}
+\item{confidence}{integer/character or \code{NA}. Ensembl orthology
+confidence flag (1 = high, 0 = low).}
+\item{ambiguous}{logical. \code{TRUE} where \code{ortholog_type ==
+    "many2many"}; derived, not supplied.}
+\item{source}{character. Provenance of the edge: one of
+\code{"ensembl"}, \code{"eggnog"}, \code{"genetree"}, \code{"manual"}.}
 }
 
 Edges are directed from species A to species B: every row represents a focal
 gene in A and a homologous partner in B. To assess substitution in both
-lineages, score in both directions via the \code{symmetric} argument of
-\code{\link{detect_substitutions}} (or run the pipeline twice with
-\code{species_a} and \code{species_b} swapped).
+lineages, run the pipeline in both directions (swap \code{species_a} and
+\code{species_b}).
 }
 \examples{
 edges <- data.frame(
   gene_a = c("Actb", "Gapdh", "Myl2"),
   gene_b = c("ACTB", "GAPDH", "MYL7"),
-  relationship = c("ortholog", "ortholog", "paralog")
+  relationship = c("ortholog", "ortholog", "paralog"),
+  ortholog_type = c("one2one", "one2one", NA)
 )
 hg <- as_homology_graph(edges)
 summary(hg)

@@ -1,3 +1,4 @@
+
 #' Cross-species homolog correlations over the metacell grid
 #'
 #' For each focal gene in species A, correlates its expression across matched
@@ -106,22 +107,45 @@ compute_homolog_correlations <- function(metacells_a, metacells_b,
 #' @param delta_threshold Minimum delta_r to flag. Default 0.3.
 #' @param require_ortholog If TRUE (default), only score genes that have an
 #'   ortholog correlation (drops paralog-only or NA-ortholog genes).
-#'
 #' @return A \code{substitutions} data.frame: gene, ortholog, n_orthologs,
 #'   best_paralog, r_ortholog, r_paralog, delta_r, flagged. Sorted by
 #'   descending delta_r. \code{n_orthologs} is the number of ortholog edges the
-#'   focal gene has in the homology graph; \code{ortholog} and
+#'   focal gene has in \code{homolog_correlations}; \code{ortholog} and
 #'   \code{r_ortholog} report the first of them, so \code{n_orthologs > 1}
 #'   marks a one-to-many or many-to-many focal gene whose delta_r depends on
 #'   which ortholog was taken. Ambiguity is reported rather than resolved.
-#'   Parameters are recorded in \code{attr(x, "params")}. 
+#'   Parameters are recorded in \code{attr(x, "params")}.
+#'
 #'   Focal genes that cannot be scored are not silently discarded: they are
-#'   recorded in \code{attr(x, "dropped")} with a reason. \code{"ortholog_invariant"}
-#'   means the ortholog was observed across the full grid but shows no variance —
-#'   typically unexpressed in species B. Because \code{delta_r} subtracts a
-#'   measured ortholog correlation, a substitution in which the ortholog has been
-#'   wholly lost or silenced is undefined rather than maximal, and appears here
-#'   rather than among the flagged genes.
+#'   recorded in \code{attr(x, "dropped")} with a reason, alongside the
+#'   ortholog they were tested against, its \code{n_pairs}, and the best
+#'   paralog correlation where one is defined. Reasons are:
+#'   \describe{
+#'     \item{\code{no_ortholog_edge}}{The focal gene has no ortholog in the
+#'       homology graph. Only reachable when \code{require_ortholog = TRUE}.}
+#'     \item{\code{ortholog_too_sparse}}{The ortholog was observed in fewer
+#'       than \code{min_pairs} matched metacell pairs, so its correlation was
+#'       not estimated.}
+#'     \item{\code{ortholog_invariant}}{The ortholog was observed across the
+#'       full grid but shows no variance -- typically unexpressed in species B
+#'       -- while paralog correlations remain defined. This is the signature of
+#'       a substitution whose ortholog has been silenced.}
+#'     \item{\code{focal_gene_invariant}}{No homolog correlation is defined at
+#'       full coverage, because the focal gene itself shows no variance across
+#'       the grid. The gene is unmeasurable in species A, and no anchor on this
+#'       species can evaluate it. Distinguished from
+#'       \code{ortholog_invariant} by the absence of any finite paralog
+#'       correlation.}
+#'     \item{\code{no_paralog_correlation}}{The ortholog was scored but no
+#'       paralog correlation was estimable, so delta_r has no comparison term.}
+#'   }
+#'
+#'   Because \code{delta_r} subtracts a measured ortholog correlation from the
+#'   best paralog correlation, a substitution in which the ortholog has been
+#'   wholly lost or silenced is undefined rather than maximal. Such genes
+#'   appear in \code{attr(x, "dropped")} rather than among the flagged, and the
+#'   method is therefore least sensitive at the completest substitutions. Read
+#'   the dropped table, not only the flagged one.
 #'
 #' @export
 detect_substitutions <- function(homolog_correlations,

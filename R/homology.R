@@ -378,8 +378,31 @@ if (length(unmatched) && isTRUE(verbose))
 #'   reproducibility. \code{NULL} uses the current release.
 #' @param id_type Either \code{"ensembl"} (gene stable IDs) or \code{"symbol"}
 #'   (external gene names); controls both the filter and the returned IDs.
-#' @param corrections Optional \code{data.frame} of user-supplied homology edges
-#'   (same columns as \code{as_homology_graph} accepts) merged into the graph.
+#' @param corrections Optional edge table of user-supplied homology, merged with
+#'   the pulled Ensembl edges and tagged in the \code{source} column (e.g.
+#'   \code{"eggnog"}, \code{"genetree"}). Requires the columns \code{gene_a},
+#'   \code{gene_b}, \code{species_a}, \code{species_b}, \code{relationship} and
+#'   \code{ortholog_type}, and must be written in the same identifier space as
+#'   \code{id_type}: edges join by string match and no conversion is performed,
+#'   so an Ensembl-ID correction will not attach to a symbol-space graph.
+#'
+#'   An optional \code{action} column takes \code{"add"} (the default when the
+#'   column is absent) or \code{"remove"}. Removals are applied before
+#'   additions, so a pair may be retracted and re-supplied in one table; they
+#'   match irrespective of edge orientation, and the retracted rows are kept on
+#'   the result in \code{attr(x, "excluded")} with their original
+#'   \code{source}, so an override is recorded rather than hidden. A removal
+#'   that matches no pulled edge is reported and otherwise ignored, which is
+#'   expected whenever a bounded pull never fetched the offending edge.
+#'
+#'   Removal exists because curation cannot be inferred from expression. Unlike
+#'   SAMap, which prunes its homology graph to positively correlated gene pairs,
+#'   paralogswap must not select edges using the correlations detection
+#'   measures -- that would tune the apparatus on the result. A wrong edge is
+#'   therefore retracted by declaration, with provenance, not by data. This
+#'   matters because \code{detect_substitutions} takes \code{max(r_paralog)}:
+#'   supplying correct edges cannot out-vote an incorrect one, since a spurious
+#'   paralog may win the maximum by chance.
 #' @param min_perc_id Optional numeric floor on Ensembl homolog percent
 #'   identity. \code{NULL} keeps all edges and relies on \code{min_confidence}.
 #' @param min_confidence Character; keep orthologs at or above this Ensembl

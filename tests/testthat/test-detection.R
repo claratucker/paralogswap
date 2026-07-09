@@ -136,3 +136,90 @@ test_that("NA-ortholog gene is dropped when require_ortholog=TRUE", {
   expect_equal(nrow(subs[subs$gene=="gX", ]), 0)  # dropped: no valid ortholog
 })
 
+
+# ---- attr(x, "dropped"): why a focal gene could not be scored --------------
+# Each fixture isolates one branch of the reason chain. Ordering matters: a gene
+# whose every edge is NA must read focal_gene_invariant, not ortholog_invariant.
+
+hc_fixture <- function(rows, min_pairs = 10, cor_method = "spearman") {
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  attr(out, "params") <- list(min_pairs = min_pairs, cor_method = cor_method)
+  class(out) <- c("homolog_correlations", "data.frame")
+  out
+}
+edge <- function(gene_a, gene_b, relationship, r, n_pairs = 100) {
+  data.frame(gene_a = gene_a, gene_b = gene_b, relationship = relationship,
+             r = r, n_pairs = n_pairs, stringsAsFactors = FALSE)
+}
+reason_for <- function(hc, gene) {
+  d <- attr(detect_substitutions(hc), "dropped")
+  d$reason[d$gene == gene]
+}
+
+test_that("a flat focal gene reads focal_gene_invariant, not ortholog_invariant", {
+  # every edge undefined at full coverage: the species-A gene has no variance
+  hc <- hc_fixture(list(
+    edge("FLAT", "flat_orth", "ortholog", NA_real_),
+    edge("FLAT", "para1",     "paralog",  NA_real_),
+    edge("FLAT", "para2",     "paralog",  NA_real_)))
+  expect_identical(reason_for(hc, "FLAT"), "focal_gene_invariant")
+
+  d <- attr(detect_substitutions(hc), "dropped")
+  expect_true(is.na(d$best_paralog[d$gene == "FLAT"]))   # the discriminator
+})
+
+test_that("a flat ortholog with live paralogs reads ortholog_invariant", {
+  # full coverage, ortholog undefined, but a paralog correlates: the ortholog is
+  # silenced in species B -- a substitution delta_r cannot score
+  hc <- hc_fixture(list(
+    edge("GENE", "orth",  "ortholog", NA_real_),
+    edge("GENE", "para1", "paralog",  0.49),
+    edge("GENE", "para2", "paralog",  0.41)))
+  expect_identical(reason_for(hc, "GENE"), "ortholog_invariant")
+
+  d <- attr(detect_substitutions(hc), "dropped")
+  expect_identical(d$best_paralog[d$gene == "GENE"], "para1")
+  expect_equal(d$r_paralog[d$gene == "GENE"], 0.49)
+})
+
+test_that("a sparse ortholog reads ortholog_too_sparse", {
+  hc <- hc_fixture(list(
+    edge("GENE", "orth",  "ortholog", NA_real_, n_pairs = 3),   # below min_pairs
+    edge("GENE", "para1", "paralog",  0.5)))
+  expect_identical(reason_for(hc, "GENE"), "ortholog_too_sparse")
+})
+
+test_that("all-NA edges below min_pairs prefer sparsity over invariance", {
+  # focal_flat requires FULL coverage; sparse all-NA must not claim invariance
+  hc <- hc_fixture(list(
+    edge("GENE", "orth",  "ortholog", NA_real_, n_pairs = 2),
+    edge("GENE", "para1", "paralog",  NA_real_, n_pairs = 2)))
+  expect_identical(reason_for(hc, "GENE"), "ortholog_too_sparse")
+})
+
+test_that("a focal gene with no ortholog edge reads no_ortholog_edge", {
+  hc <- hc_fixture(list(edge("GENE", "para1", "paralog", 0.6)))
+  expect_identical(reason_for(hc, "GENE"), "no_ortholog_edge")
+})
+
+test_that("scoreable genes are absent from the dropped table", {
+  hc <- hc_fixture(list(
+    edge("OK",   "orth",  "ortholog", 0.1),
+    edge("OK",   "para1", "paralog",  0.7),
+    edge("FLAT", "orth2", "ortholog", NA_real_),
+    edge("FLAT", "para2", "paralog",  NA_real_)))
+  subs <- detect_substitutions(hc)
+  expect_true("OK" %in% subs$gene)
+  expect_false("FLAT" %in% subs$gene)
+  expect_identical(attr(subs, "dropped")$gene, "FLAT")
+  expect_true(subs$flagged[subs$gene == "OK"])           # delta_r = 0.6 > 0.3
+})
+
+test_that("params are absent on older objects without breaking the reasons", {
+  hc <- hc_fixture(list(
+    edge("FLAT", "orth",  "ortholog", NA_real_),
+    edge("FLAT", "para1", "paralog",  NA_real_)))
+  attr(hc, "params") <- NULL                              # pre-backfill object
+  expect_identical(reason_for(hc, "FLAT"), "focal_gene_invariant")
+})

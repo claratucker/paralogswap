@@ -1,9 +1,19 @@
 Package: paralogswap
-Title: What the Package Does (One Line, Title Case)
+Title: Title: Detect Paralog Substitution Events in Cross-Species Single-Cell RNA-Seq Data
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+    person("Clara", "Tucker", , "ClaraC.Tucker@gmail.com", role = c("aut", "cre"))
+Description: Detects paralog substitution events in cross-species single-cell
+    RNA-seq data without requiring cell-type annotation. Cross-species
+    correspondence is derived from expression rather than supplied as labels:
+    each species is clustered independently, clusters are matched across
+    species over a one-to-one ortholog bridge, and metacells are matched within
+    matched clusters. Each gene is then correlated against its ortholog and its
+    paralogs over that grid, flagging genes whose paralog tracks the
+    cross-species pattern better than the annotated ortholog. Homology is read
+    from curated Ensembl Compara orthology via 'biomaRt', retaining the full
+    graph including one-to-many and many-to-many edges, with support for
+    user-supplied corrections where curated calls are incomplete or erroneous.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

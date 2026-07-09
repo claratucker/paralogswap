@@ -238,7 +238,12 @@ plot_ortholog_vs_paralog <- function(homolog_correlations,
 #' @param seed RNG seed. Default 1.
 #' @param verbose Print progress. Default TRUE.
 #'
-#' @return A ggplot object: gamma (log x) vs fidelity (y), one line per quantity.
+#' @return A ggplot of the fidelity curve. The underlying per-gamma values
+#'   (\code{gamma}, \code{coherence}, \code{preservation}) are attached as
+#'   \code{attr(x, "curve")} so the chosen gamma can be justified from the
+#'   record rather than from the rendered figure. The function selects no
+#'   gamma; read the largest value still on the preservation plateau and pass
+#'   it to \code{\link{build_metacells}}.
 #' @export
 plot_graining_curve <- function(clusters,
                                 gammas = c(5, 10, 20, 50, 100),
@@ -303,7 +308,7 @@ plot_graining_curve <- function(clusters,
     gamma = curve$gamma, quantity = q, value = curve[[q]],
     stringsAsFactors = FALSE)))
 
-  ggplot2::ggplot(long, ggplot2::aes(.data$gamma, .data$value,
+p <- ggplot2::ggplot(long, ggplot2::aes(.data$gamma, .data$value,
                                      colour = .data$quantity)) +
     ggplot2::geom_line() +
     ggplot2::geom_point(size = 1.9) +
@@ -312,9 +317,12 @@ plot_graining_curve <- function(clusters,
       values = c(coherence = "#2c7fb8", preservation = "#c0392b"),
       labels = c(coherence = "within-metacell coherence",
                  preservation = "correlation preservation"),
-      name = NULL) +
+      name = NULL) + 
     ggplot2::labs(x = "gamma (cells per metacell, log scale)", y = "fidelity",
                   title = "Graining fidelity curve",
                   subtitle = "choose the largest gamma still on the plateau") +
     ggplot2::theme_bw()
+
+  attr(p, "curve") <- curve
+  p
 }

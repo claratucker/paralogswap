@@ -38,7 +38,12 @@ the preservation panel. Default 500.}
 \item{verbose}{Print progress. Default TRUE.}
 }
 \value{
-A ggplot object: gamma (log x) vs fidelity (y), one line per quantity.
+A ggplot of the fidelity curve. The underlying per-gamma values
+(\code{gamma}, \code{coherence}, \code{preservation}) are attached as
+\code{attr(x, "curve")} so the chosen gamma can be justified from the
+record rather than from the rendered figure. The function selects no
+gamma; read the largest value still on the preservation plateau and pass
+it to \code{\link{build_metacells}}.
 }
 \description{
 Sweeps gamma and plots two single-species fidelity quantities that stay flat

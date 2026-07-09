@@ -116,3 +116,109 @@ test_that("min_confidence='high' drops low-confidence orthologs, keeps paralogs"
   expect_false(any(orth$gene_a == "ENSG_RAMP3"))  # dropped
   expect_true(any(hg$relationship == "paralog"))  # paralogs (NA conf) kept
 })
+
+# ---- corrections: add / remove -------------------------------------------
+
+test_that("action='remove' retracts an edge instead of adding it", {
+  o <- ortho_rows(); p <- para_rows()
+  base <- assemble_homology_edges(o, p, species_a = "hsapiens",
+                                  species_b = "mmusculus", verbose = FALSE)
+  n0 <- nrow(base)
+
+  rm_one <- data.frame(
+    gene_a = "ENSG_RAMP1", gene_b = "ENSG_RAMP3",
+    species_a = "hsapiens", species_b = "hsapiens",
+    relationship = "paralog", ortholog_type = NA_character_,
+    source = "eggnog", action = "remove", stringsAsFactors = FALSE)
+
+  out <- assemble_homology_edges(o, p, species_a = "hsapiens",
+                                 species_b = "mmusculus",
+                                 corrections = rm_one, verbose = FALSE)
+
+  expect_equal(nrow(out), n0 - 1L)
+  d <- as.data.frame(out)
+  expect_false(any(d$gene_a == "ENSG_RAMP1" & d$gene_b == "ENSG_RAMP3" &
+                   d$relationship == "paralog"))
+  ex <- attr(out, "excluded")
+  expect_equal(nrow(ex), 1L)
+  expect_identical(as.character(ex$source[1]), "ensembl")
+})
+
+test_that("removal matches regardless of edge orientation", {
+  o <- ortho_rows(); p <- para_rows()
+  rm_rev <- data.frame(
+    gene_a = "ENSG_RAMP3", gene_b = "ENSG_RAMP1",
+    species_a = "hsapiens", species_b = "hsapiens",
+    relationship = "paralog", ortholog_type = NA_character_,
+    source = "eggnog", action = "remove", stringsAsFactors = FALSE)
+
+  out <- assemble_homology_edges(o, p, species_a = "hsapiens",
+                                 species_b = "mmusculus",
+                                 corrections = rm_rev, verbose = FALSE)
+  expect_equal(nrow(attr(out, "excluded")), 1L)
+})
+
+test_that("removals are applied before additions for the same pair", {
+  o <- ortho_rows(); p <- para_rows()
+  corr <- rbind(
+    data.frame(gene_a = "ENSG_RAMP1", gene_b = "ENSG_RAMP3",
+               species_a = "hsapiens", species_b = "hsapiens",
+               relationship = "paralog", ortholog_type = NA_character_,
+               source = "eggnog", action = "remove", stringsAsFactors = FALSE),
+    data.frame(gene_a = "ENSG_RAMP1", gene_b = "ENSG_RAMP3",
+               species_a = "hsapiens", species_b = "hsapiens",
+               relationship = "paralog", ortholog_type = NA_character_,
+               source = "genetree", action = "add", stringsAsFactors = FALSE))
+
+  out <- as.data.frame(assemble_homology_edges(
+    o, p, species_a = "hsapiens", species_b = "mmusculus",
+    corrections = corr, verbose = FALSE))
+
+  row <- out[out$gene_a == "ENSG_RAMP1" & out$gene_b == "ENSG_RAMP3" &
+             out$relationship == "paralog", ]
+  expect_equal(nrow(row), 1L)
+  expect_identical(as.character(row$source[1]), "genetree")
+})
+
+test_that("corrections without an action column still add (back-compat)", {
+  o <- ortho_rows(); p <- para_rows()
+  add_only <- data.frame(
+    gene_a = "ENSG_RAMP2", gene_b = "ENSMUS_RAMP2",
+    species_a = "hsapiens", species_b = "mmusculus",
+    relationship = "ortholog", ortholog_type = "one2one",
+    source = "eggnog", stringsAsFactors = FALSE)
+
+  out <- assemble_homology_edges(o, p, species_a = "hsapiens",
+                                 species_b = "mmusculus",
+                                 corrections = add_only, verbose = FALSE)
+  expect_true(any(as.data.frame(out)$source == "eggnog"))
+  expect_null(attr(out, "excluded"))
+})
+
+test_that("an unrecognized action is rejected", {
+  o <- ortho_rows(); p <- para_rows()
+  bad <- data.frame(gene_a = "X", gene_b = "Y",
+                    species_a = "hsapiens", species_b = "hsapiens",
+                    relationship = "paralog", ortholog_type = NA_character_,
+                    source = "manual", action = "delete", stringsAsFactors = FALSE)
+  expect_error(
+    assemble_homology_edges(o, p, species_a = "hsapiens", species_b = "mmusculus",
+                            corrections = bad, verbose = FALSE),
+    "add")
+})
+
+test_that("as_homology_graph refuses a corrections table containing removals", {
+  rm_row <- data.frame(gene_a = "X", gene_b = "Y",
+                       relationship = "paralog", ortholog_type = NA_character_,
+                       action = "remove", stringsAsFactors = FALSE)
+  expect_error(as_homology_graph(rm_row, verbose = FALSE), "removals")
+})
+
+# ---- b_ids sanitation (the empty-string filter bug) -----------------------
+
+test_that(".clean_ids drops empty and NA ids that would unrestrict a pull", {
+  expect_equal(paralogswap:::.clean_ids(c("Ramp1", "", "Ramp3", NA)),
+               c("Ramp1", "Ramp3"))
+  expect_null(paralogswap:::.clean_ids(c("", NA, "  ")))
+  expect_null(paralogswap:::.clean_ids(NULL))
+})

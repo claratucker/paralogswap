@@ -28,6 +28,13 @@ focal gene has in the homology graph; \code{ortholog} and
 marks a one-to-many or many-to-many focal gene whose delta_r depends on
 which ortholog was taken. Ambiguity is reported rather than resolved.
 Parameters are recorded in \code{attr(x, "params")}.
+Focal genes that cannot be scored are not silently discarded: they are
+recorded in \code{attr(x, "dropped")} with a reason. \code{"ortholog_invariant"}
+means the ortholog was observed across the full grid but shows no variance —
+typically unexpressed in species B. Because \code{delta_r} subtracts a
+measured ortholog correlation, a substitution in which the ortholog has been
+wholly lost or silenced is undefined rather than maximal, and appears here
+rather than among the flagged genes.
 }
 \description{
 For each focal gene, computes delta_r = max(paralog r) - ortholog r and

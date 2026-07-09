@@ -65,15 +65,21 @@ FOCAL_MOUSE <- c(RAMP1 = "Ramp1", RAMP2 = "Ramp2", RAMP3 = "Ramp3")
 # --- The correction (VERIFIED needed via Ensembl REST r116: lemur RAMP2
 #     ENSMICG00000028500 -> mouse returns 0 ortholog edges; mouse Ramp2 =
 #     ENSMUSG00000001240, chr11). Symbol-keyed to match the symbol-space graph.
-CORRECTIONS <- data.frame(
-  gene_a        = "RAMP2",   # lemur
-  gene_b        = "Ramp2",   # mouse
-  species_a     = LEMUR,
-  species_b     = MOUSE,
-  relationship  = "ortholog",
-  ortholog_type = "one2one",
-  source        = "eggnog",
-  stringsAsFactors = FALSE
+
+CORRECTIONS <- rbind(
+  data.frame(gene_a="VPS25", gene_b="Ramp2", species_a="mmurinus", species_b="mmusculus",
+             relationship="ortholog", ortholog_type="one2many",
+             source="eggnog", action="remove", stringsAsFactors=FALSE),
+  data.frame(gene_a="Ramp2", gene_b="Vps25", species_a="mmusculus", species_b="mmusculus",
+             relationship="paralog", ortholog_type=NA_character_,
+             source="eggnog", action="remove", stringsAsFactors=FALSE),
+  data.frame(gene_a="RAMP2", gene_b="Ramp2", species_a="mmurinus", species_b="mmusculus",
+             relationship="ortholog", ortholog_type="one2one",
+             source="eggnog", action="add", stringsAsFactors=FALSE),
+  data.frame(gene_a=c("Ramp2","Ramp2"), gene_b=c("Ramp1","Ramp3"),
+             species_a="mmusculus", species_b="mmusculus",
+             relationship="paralog", ortholog_type=NA_character_,
+             source="eggnog", action="add", stringsAsFactors=FALSE)
 )
 
 # ---- S3 layout + helpers --------------------------------------------

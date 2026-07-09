@@ -87,6 +87,18 @@ as_homology_graph <- function(edge_df, verbose = TRUE) {
   }
   edge_df$relationship <- factor(rel, levels = valid_rel)
 
+  # `action` is meaningful only in a corrections table consumed by
+  # build_homology_graph(). Silently treating a removal as an addition would
+  # inject the very edge the user asked to retract.
+  if ("action" %in% colnames(edge_df)) {
+    act <- tolower(trimws(as.character(edge_df$action)))
+    if (any(act != "add")) {
+      stop("`edge_df` contains removals (action = 'remove'). `as_homology_graph()` ",
+           "only builds a graph from edges; pass removals to ",
+           "`build_homology_graph(corrections = )`.", call. = FALSE)
+    }
+  }
+
   # ortholog_type: three levels for orthologs; NA allowed (e.g. paralog edges).
   ot <- as.character(edge_df$ortholog_type)
   valid_ot <- c("one2one", "one2many", "many2many")
@@ -176,6 +188,9 @@ summary.homology_graph <- function(object, ...) {
   n_edges <- nrow(object)
   n_ortho <- sum(object$relationship == "ortholog")
   n_para  <- sum(object$relationship == "paralog")
+  ex <- attr(object, "excluded")
+  if (!is.null(ex) && nrow(ex))
+    cat("  excluded by correction:", nrow(ex), "edge(s)\n")
 
   pct <- function(n) if (n_edges > 0) 100 * n / n_edges else NA_real_
 
@@ -289,19 +304,51 @@ assemble_homology_edges <- function(ortholog_edges, paralog_edges,
     edges <- edges[is.na(conf) | conf == 1, , drop = FALSE]
   }
 
-  # ---- merge corrections (override matching pairs) ---------------------------
+# ---- apply corrections: removals first, then additions ---------------------
+  excluded <- NULL
   if (!is.null(corrections)) {
-    if (isTRUE(verbose)) message("Merging ", nrow(corrections),
-                                 " correction edge(s) ...")
-    corr <- as_homology_graph(corrections, verbose = FALSE)
-    corr_key <- make_key(corr)
-    edge_key <- make_key(edges)
-    edges <- edges[!(edge_key %in% corr_key), , drop = FALSE]
-    common <- intersect(colnames(edges), colnames(corr))
-    edges <- rbind(edges[, common, drop = FALSE], corr[, common, drop = FALSE])
+    corrections <- as.data.frame(corrections, stringsAsFactors = FALSE)
+    if (!"action" %in% names(corrections)) corrections$action <- "add"
+    corrections$action <- tolower(trimws(corrections$action))
+    bad <- setdiff(unique(corrections$action), c("add", "remove"))
+    if (length(bad))
+      stop("`corrections$action` must be \"add\" or \"remove\"; got: ",
+           paste(bad, collapse = ", "), call. = FALSE)
+
+    rm_df  <- corrections[corrections$action == "remove", , drop = FALSE]
+    add_df <- corrections[corrections$action == "add",    , drop = FALSE]
+
+    if (isTRUE(verbose))
+      message("Corrections: removing ", nrow(rm_df), ", adding ", nrow(add_df), " edge(s) ...")
+
+if (nrow(rm_df)) {
+      # Validate schema and compute keys, but strip `action` first: the guard in
+      # as_homology_graph() exists to stop users passing removals to it, and must
+      # not fire on this internal key-computation call.
+      rm_key <- make_key(as_homology_graph(rm_df[, setdiff(names(rm_df), "action"),
+                                                 drop = FALSE], verbose = FALSE))
+      ek     <- make_key(edges)
+      hit    <- ek %in% rm_key
+      excluded <- edges[hit, , drop = FALSE]
+      unmatched <- setdiff(rm_key, ek)
+if (length(unmatched) && isTRUE(verbose))
+        message("  ", length(unmatched), " removal edge(s) matched nothing ",
+                "(expected when a bounded pull never fetched them).")
+
+      edges <- edges[!hit, , drop = FALSE]
+    }
+
+    if (nrow(add_df)) {
+      corr     <- as_homology_graph(add_df, verbose = FALSE)
+      edges    <- edges[!(make_key(edges) %in% make_key(corr)), , drop = FALSE]
+      common   <- intersect(colnames(edges), colnames(corr))
+      edges    <- rbind(edges[, common, drop = FALSE], corr[, common, drop = FALSE])
+    }
   }
 
-  as_homology_graph(edges, verbose = verbose)
+  out <- as_homology_graph(edges, verbose = verbose)
+  attr(out, "excluded") <- excluded    # NULL when nothing removed
+  out
 }
 
 #' Build a homology graph from Ensembl Compara
@@ -466,7 +513,10 @@ connect <- function(sp) {
   if (isTRUE(verbose)) message("Pulling orthologs (both directions) ...")
   o_ab <- pull_orthologs(mart_a, species_a, species_b, genes)
   # Reverse direction restricted to the B genes we actually found (keeps it small).
-  b_ids <- if (!is.null(o_ab)) unique(o_ab$gene_b) else NULL
+# Genes with no ortholog return an empty gene_b, and biomaRt treats an empty
+  # filter value as "no filter" -- which would make the reverse pull unrestricted.
+  b_ids <- if (!is.null(o_ab)) .clean_ids(o_ab$gene_b) else NULL
+
   o_ba <- pull_orthologs(mart_b, species_b, species_a,
                          if (is.null(genes)) NULL else b_ids)
 
@@ -495,3 +545,14 @@ if (isTRUE(include_paralogs)) {
   )
 }
 
+
+# biomaRt returns "" (not NA, not absent) for a gene with no homolog, and treats
+# an empty filter value as "no filter" -- so passing it back unsanitized makes the
+# reverse pull unrestricted, sweeping in unrelated genes. Drop empties and NAs
+# before using IDs as filters.
+.clean_ids <- function(x) {
+  if (is.null(x)) return(NULL)
+  x <- unique(as.character(x))
+  x <- x[!is.na(x) & nzchar(trimws(x))]
+  if (length(x) == 0) NULL else x
+}

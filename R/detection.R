@@ -90,7 +90,8 @@ compute_homolog_correlations <- function(metacells_a, metacells_b,
   if (isTRUE(verbose)) message(nrow(out), " correlations for ",
                                length(unique(out$gene_a)), " focal genes over ",
                                nrow(mmc), " metacell pairs.")
-  class(out) <- c("homolog_correlations", "data.frame")
+    attr(out, "params") <- list(min_pairs = min_pairs, cor_method = cor_method)  
+    class(out) <- c("homolog_correlations", "data.frame")
   out
 }
 #' Detect paralog substitution candidates
@@ -113,22 +114,56 @@ compute_homolog_correlations <- function(metacells_a, metacells_b,
 #'   \code{r_ortholog} report the first of them, so \code{n_orthologs > 1}
 #'   marks a one-to-many or many-to-many focal gene whose delta_r depends on
 #'   which ortholog was taken. Ambiguity is reported rather than resolved.
-#'   Parameters are recorded in \code{attr(x, "params")}.
+#'   Parameters are recorded in \code{attr(x, "params")}. 
+#'   Focal genes that cannot be scored are not silently discarded: they are
+#'   recorded in \code{attr(x, "dropped")} with a reason. \code{"ortholog_invariant"}
+#'   means the ortholog was observed across the full grid but shows no variance —
+#'   typically unexpressed in species B. Because \code{delta_r} subtracts a
+#'   measured ortholog correlation, a substitution in which the ortholog has been
+#'   wholly lost or silenced is undefined rather than maximal, and appears here
+#'   rather than among the flagged genes.
 #'
 #' @export
 detect_substitutions <- function(homolog_correlations,
                                  delta_threshold = 0.3,
                                  require_ortholog = TRUE) {
-  hc <- homolog_correlations
+hc <- homolog_correlations
+  hcp <- attr(hc, "params")
+  min_pairs <- if (!is.null(hcp) && !is.null(hcp$min_pairs)) hcp$min_pairs else NA_integer_
   genes <- unique(hc$gene_a)
-  rows <- list()
+  rows <- list(); dropped <- list()
+
+  .drop <- function(g, reason, orth, para) {
+    dropped[[length(dropped) + 1L]] <<- data.frame(
+      gene         = g,
+      reason       = reason,
+      ortholog     = if (nrow(orth)) orth$gene_b[1]  else NA_character_,
+      n_pairs      = if (nrow(orth)) orth$n_pairs[1] else NA_integer_,
+      best_paralog = if (nrow(para)) para$gene_b[which.max(para$r)] else NA_character_,
+      r_paralog    = if (nrow(para)) max(para$r)     else NA_real_,
+      stringsAsFactors = FALSE)
+  }
+
   for (g in genes) {
     sub <- hc[hc$gene_a == g, ]
     orth <- sub[sub$relationship == "ortholog", ]
     para <- sub[sub$relationship == "paralog" & is.finite(sub$r), ]
     r_orth <- if (nrow(orth) && is.finite(orth$r[1])) orth$r[1] else NA
-    if (require_ortholog && is.na(r_orth)) next
-    if (nrow(para) == 0) next
+
+    if (require_ortholog && is.na(r_orth)) {
+      reason <- if (nrow(orth) == 0) {
+        "no_ortholog_edge"
+      } else if (!is.na(min_pairs) && orth$n_pairs[1] < min_pairs) {
+        "ortholog_too_sparse"
+      } else {
+        # full pair coverage but no correlation: one side is invariant across
+        # the grid. Typically the ortholog is unexpressed in species B — the
+        # limiting case of substitution, which delta_r cannot score.
+        "ortholog_invariant"
+      }
+      .drop(g, reason, orth, para); next
+    }
+    if (nrow(para) == 0) { .drop(g, "no_paralog_correlation", orth, para); next }
     best <- para[which.max(para$r), ]
     delta <- best$r - (if (is.na(r_orth)) 0 else r_orth)
     rows[[length(rows)+1L]] <- data.frame(
@@ -154,7 +189,12 @@ out <- do.call(rbind, rows)
     rownames(out) <- NULL
     out <- out[order(-out$delta_r), ]
   }
- attr(out, "params") <- list(delta_threshold = delta_threshold,
+attr(out, "dropped") <- if (length(dropped))
+    do.call(rbind, dropped) else
+    data.frame(gene = character(0), reason = character(0), ortholog = character(0),
+               n_pairs = integer(0), best_paralog = character(0),
+               r_paralog = numeric(0), stringsAsFactors = FALSE) 
+attr(out, "params") <- list(delta_threshold = delta_threshold,
                               require_ortholog = require_ortholog)
   class(out) <- c("substitutions", "data.frame")
   out
@@ -166,5 +206,11 @@ summary.substitutions <- function(object, ...) {
   cat("  flagged (delta_r >= threshold):", sum(object$flagged), "\n")
   cat("  delta_r range:", sprintf("%.2f", min(object$delta_r)), "-",
       sprintf("%.2f", max(object$delta_r)), "\n")
+d <- attr(object, "dropped")
+  if (!is.null(d) && nrow(d)) {
+    cat("\n  ", nrow(d), " focal gene(s) not scored:\n", sep = "")
+    for (r in unique(d$reason))
+      cat("    ", r, ": ", paste(d$gene[d$reason == r], collapse = ", "), "\n", sep = "")
+  }  
   invisible(object)
 }

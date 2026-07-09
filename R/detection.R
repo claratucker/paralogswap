@@ -151,8 +151,16 @@ hc <- homolog_correlations
     r_orth <- if (nrow(orth) && is.finite(orth$r[1])) orth$r[1] else NA
 
     if (require_ortholog && is.na(r_orth)) {
+      # Every homolog edge undefined at full coverage means the FOCAL (species-A)
+      # gene is invariant, not the ortholog. Distinguishable because a flat
+      # ortholog still leaves finite paralog correlations.
+      focal_flat <- !any(is.finite(sub$r)) &&
+                    (is.na(min_pairs) || all(sub$n_pairs >= min_pairs, na.rm = TRUE))
+
       reason <- if (nrow(orth) == 0) {
         "no_ortholog_edge"
+      } else if (isTRUE(focal_flat)) {
+        "focal_gene_invariant"
       } else if (!is.na(min_pairs) && orth$n_pairs[1] < min_pairs) {
         "ortholog_too_sparse"
       } else {

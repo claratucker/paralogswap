@@ -132,13 +132,22 @@ summary.metacells <- function(object, ...) {
 }
 #' Fine cross-species correspondence by metacell matching
 #'
-#' Within each matched cluster pair (from \code{\link{match_clusters}}), pairs
-#' metacells across species by reciprocal best correlation in gene space over
-#' the one-to-one ortholog bridge. Produces a fine grid of matched cross-species
-#' metacell pairs — the analog of SAMap's cell-level linking (Tarashansky et al.
-#' 2021), but constrained by the interpretable cluster correspondence,
-#' coarse-grained for robustness, and computed in gene space rather than a joint
-#' embedding.
+#' Within each reciprocally matched cluster pair (from
+#' \code{\link{match_clusters}}), pairs metacells across species by mutual
+#' k-nearest-neighbor correlation in gene space over the one-to-one ortholog
+#' bridge: an A-metacell and a B-metacell are paired when each falls in the
+#' other's top-\code{mutual_k} correlations. Produces a fine grid of matched
+#' cross-species metacell pairs — the analog of SAMap's cell-level linking
+#' (Tarashansky et al. 2021), but constrained by the interpretable cluster
+#' correspondence, coarse-grained for robustness, and computed in gene space
+#' rather than a joint embedding.
+#'
+#' Mutual-kNN is used at the metacell level rather than reciprocal-best
+#' matching, which lets a few high-expression "winner" metacells absorb the
+#' matches and collapses the grid (on lemur–human lung, roughly nine pairs
+#' against roughly one hundred ninety at \code{mutual_k = 5}). Reciprocity is
+#' still required at the cluster level: only reciprocal cluster matches are
+#' grained over.
 #'
 #' @param metacells_a,metacells_b \code{metacells} objects (\code{\link{build_metacells}})
 #'   for species A and B.
@@ -148,14 +157,18 @@ summary.metacells <- function(object, ...) {
 #'   the gene axes.
 #' @param species_a,species_b Species identifiers matching the graph.
 #' @param cor_method \code{"spearman"} (default) or \code{"pearson"}.
-#' @param verbose Print progress. Default TRUE.
 #' @param mutual_k Neighborhood size for mutual k-nearest-neighbor metacell
-#'   matching. Larger values yield more pairs (a denser grid). Default 5.
+#'   matching. Larger values yield more pairs (a denser grid). Capped at the
+#'   number of metacells available in either cluster. Default 5.
+#' @param verbose Print progress. Default TRUE.
 #'
 #' @return A \code{metacell_correspondence}: data.frame of metacell_a,
-#'   metacell_b, cluster_a, cluster_b, score. Only reciprocal-best metacell
-#'   pairs within matched clusters are retained. Unmatched metacells are dropped
-#'   and their count reported in \code{attr(x, "unmatched")}.
+#'   metacell_b, cluster_a, cluster_b, score, sorted by cluster then descending
+#'   score. Only mutual k-nearest-neighbor metacell pairs within reciprocally
+#'   matched clusters are retained; an A-metacell may pair with more than one
+#'   B-metacell. Unmatched A-metacells are dropped and counted in
+#'   \code{attr(x, "unmatched")}; the size of the one-to-one ortholog bridge is
+#'   recorded in \code{attr(x, "n_bridge_genes")}.
 #'
 #' @export
 match_metacells <- function(metacells_a, metacells_b, correspondence,
@@ -191,8 +204,8 @@ match_metacells <- function(metacells_a, metacells_b, correspondence,
   meta_a <- metacells_a$meta; meta_b <- metacells_b$meta
   recip <- correspondence[correspondence$reciprocal, , drop = FALSE]
   if (nrow(recip) == 0)
-    stop("No reciprocal cluster matches in the correspondence.", call. = FALSE)
-
+stop("No mutual-kNN metacell pairs found within matched clusters.",
+         call. = FALSE)
   pairs_list <- list()
   n_unmatched_a <- 0L; n_unmatched_b <- 0L
 
@@ -239,7 +252,7 @@ match_metacells <- function(metacells_a, metacells_b, correspondence,
   }
 
   if (length(pairs_list) == 0)
-    stop("No reciprocal metacell pairs found within matched clusters.",
+    stop("No mutual-kNN metacell pairs found within matched clusters.",
          call. = FALSE)
   out <- do.call(rbind, pairs_list); rownames(out) <- NULL
   out <- out[order(out$cluster_a, -out$score), ]
@@ -249,7 +262,7 @@ match_metacells <- function(metacells_a, metacells_b, correspondence,
                                n_unmatched_a, " A-metacells unmatched).")
 
   attr(out, "unmatched") <- c(a = n_unmatched_a)
-  attr(out, "n_orthologs") <- nrow(o2o)
+  attr(out, "n_bridge_genes") <- nrow(o2o)
   class(out) <- c("metacell_correspondence", "data.frame")
   out
 }
@@ -257,7 +270,7 @@ match_metacells <- function(metacells_a, metacells_b, correspondence,
 #' @export
 summary.metacell_correspondence <- function(object, ...) {
   cat("metacell_correspondence:", nrow(object), "matched pairs\n")
-  cat("  ortholog bridge:", attr(object, "n_orthologs"), "genes\n")
+  cat("  ortholog bridge:", .bridge_n(object), "genes\n")
   cat("  cluster pairs:", length(unique(paste(object$cluster_a, object$cluster_b))), "\n")
   cat("  score range:", sprintf("%.2f", min(object$score)), "-",
       sprintf("%.2f", max(object$score)), "\n")

@@ -31,22 +31,36 @@ the gene axes.}
 \item{cor_method}{\code{"spearman"} (default) or \code{"pearson"}.}
 
 \item{mutual_k}{Neighborhood size for mutual k-nearest-neighbor metacell
-matching. Larger values yield more pairs (a denser grid). Default 5.}
+matching. Larger values yield more pairs (a denser grid). Capped at the
+number of metacells available in either cluster. Default 5.}
 
 \item{verbose}{Print progress. Default TRUE.}
 }
 \value{
 A \code{metacell_correspondence}: data.frame of metacell_a,
-metacell_b, cluster_a, cluster_b, score. Only reciprocal-best metacell
-pairs within matched clusters are retained. Unmatched metacells are dropped
-and their count reported in \code{attr(x, "unmatched")}.
+metacell_b, cluster_a, cluster_b, score, sorted by cluster then descending
+score. Only mutual k-nearest-neighbor metacell pairs within reciprocally
+matched clusters are retained; an A-metacell may pair with more than one
+B-metacell. Unmatched A-metacells are dropped and counted in
+\code{attr(x, "unmatched")}; the size of the one-to-one ortholog bridge is
+recorded in \code{attr(x, "n_bridge_genes")}.
 }
 \description{
-Within each matched cluster pair (from \code{\link{match_clusters}}), pairs
-metacells across species by reciprocal best correlation in gene space over
-the one-to-one ortholog bridge. Produces a fine grid of matched cross-species
-metacell pairs — the analog of SAMap's cell-level linking (Tarashansky et al.
-2021), but constrained by the interpretable cluster correspondence,
-coarse-grained for robustness, and computed in gene space rather than a joint
-embedding.
+Within each reciprocally matched cluster pair (from
+\code{\link{match_clusters}}), pairs metacells across species by mutual
+k-nearest-neighbor correlation in gene space over the one-to-one ortholog
+bridge: an A-metacell and a B-metacell are paired when each falls in the
+other's top-\code{mutual_k} correlations. Produces a fine grid of matched
+cross-species metacell pairs — the analog of SAMap's cell-level linking
+(Tarashansky et al. 2021), but constrained by the interpretable cluster
+correspondence, coarse-grained for robustness, and computed in gene space
+rather than a joint embedding.
+}
+\details{
+Mutual-kNN is used at the metacell level rather than reciprocal-best
+matching, which lets a few high-expression "winner" metacells absorb the
+matches and collapses the grid (on lemur–human lung, roughly nine pairs
+against roughly one hundred ninety at \code{mutual_k = 5}). Reciprocity is
+still required at the cluster level: only reciprocal cluster matches are
+grained over.
 }

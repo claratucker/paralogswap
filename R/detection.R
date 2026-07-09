@@ -16,10 +16,6 @@
 #' @param min_pairs Minimum matched pairs required to compute a correlation.
 #' @param verbose Print progress. Default TRUE.
 #'
-#' @return A \code{homolog_correlations} data.frame: gene_a, gene_b,
-#'   relationship {ortholog|paralog}, r, n_pairs. One row per focal-gene /
-#'   partner-gene correlation.
-#'
 #' @export
 compute_homolog_correlations <- function(metacells_a, metacells_b,
                                          metacell_correspondence,
@@ -110,8 +106,14 @@ compute_homolog_correlations <- function(metacells_a, metacells_b,
 #' @param require_ortholog If TRUE (default), only score genes that have an
 #'   ortholog correlation (drops paralog-only or NA-ortholog genes).
 #'
-#' @return A \code{substitutions} data.frame: gene, ortholog, best_paralog,
-#'   r_ortholog, r_paralog, delta_r, flagged.
+#' @return A \code{substitutions} data.frame: gene, ortholog, n_orthologs,
+#'   best_paralog, r_ortholog, r_paralog, delta_r, flagged. Sorted by
+#'   descending delta_r. \code{n_orthologs} is the number of ortholog edges the
+#'   focal gene has in the homology graph; \code{ortholog} and
+#'   \code{r_ortholog} report the first of them, so \code{n_orthologs > 1}
+#'   marks a one-to-many or many-to-many focal gene whose delta_r depends on
+#'   which ortholog was taken. Ambiguity is reported rather than resolved.
+#'   Parameters are recorded in \code{attr(x, "params")}.
 #'
 #' @export
 detect_substitutions <- function(homolog_correlations,
@@ -132,6 +134,7 @@ detect_substitutions <- function(homolog_correlations,
     rows[[length(rows)+1L]] <- data.frame(
       gene = g,
       ortholog = if (nrow(orth)) orth$gene_b[1] else NA,
+      n_orthologs = nrow(orth),
       best_paralog = best$gene_b,
       r_ortholog = r_orth,
       r_paralog = best$r,
@@ -143,6 +146,7 @@ out <- do.call(rbind, rows)
   if (is.null(out) || nrow(out) == 0) {
     out <- data.frame(
       gene = character(0), ortholog = character(0),
+      n_orthologs = integer(0),
       best_paralog = character(0), r_ortholog = numeric(0),
       r_paralog = numeric(0), delta_r = numeric(0),
       flagged = logical(0), stringsAsFactors = FALSE)

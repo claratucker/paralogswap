@@ -20,8 +20,14 @@ detect_substitutions(
 ortholog correlation (drops paralog-only or NA-ortholog genes).}
 }
 \value{
-A \code{substitutions} data.frame: gene, ortholog, best_paralog,
-r_ortholog, r_paralog, delta_r, flagged.
+A \code{substitutions} data.frame: gene, ortholog, n_orthologs,
+best_paralog, r_ortholog, r_paralog, delta_r, flagged. Sorted by
+descending delta_r. \code{n_orthologs} is the number of ortholog edges the
+focal gene has in the homology graph; \code{ortholog} and
+\code{r_ortholog} report the first of them, so \code{n_orthologs > 1}
+marks a one-to-many or many-to-many focal gene whose delta_r depends on
+which ortholog was taken. Ambiguity is reported rather than resolved.
+Parameters are recorded in \code{attr(x, "params")}.
 }
 \description{
 For each focal gene, computes delta_r = max(paralog r) - ortholog r and

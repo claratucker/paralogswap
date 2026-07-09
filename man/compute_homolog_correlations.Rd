@@ -36,11 +36,6 @@ to. NULL = all genes with an ortholog and at least one paralog.}
 
 \item{verbose}{Print progress. Default TRUE.}
 }
-\value{
-A \code{homolog_correlations} data.frame: gene_a, gene_b,
-relationship {ortholog|paralog}, r, n_pairs. One row per focal-gene /
-partner-gene correlation.
-}
 \description{
 For each focal gene in species A, correlates its expression across matched
 metacell pairs against its ortholog and against each paralog of that ortholog

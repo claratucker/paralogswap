@@ -101,7 +101,7 @@ if (isTRUE(verbose)) message("Bridging on ", nrow(o2o),
   pairs <- pairs[order(-pairs$score), ]
   rownames(pairs) <- NULL
   attr(pairs, "cor_matrix") <- cormat
-  attr(pairs, "n_orthologs") <- nrow(o2o)
+  attr(pairs, "n_bridge_genes") <- nrow(o2o)
   class(pairs) <- c("cluster_correspondence", "data.frame")
   pairs
 }
@@ -140,9 +140,17 @@ if (isTRUE(verbose)) message("Bridging on ", nrow(o2o),
 summary.cluster_correspondence <- function(object, ...) {
   n_recip <- sum(object$reciprocal)
   cat("cluster_correspondence:\n")
-  cat("  ortholog bridge:", attr(object, "n_orthologs"), "one2one genes\n")
+  cat("  ortholog bridge:", .bridge_n(object), "one2one genes\n")
   cat("  A-clusters:", nrow(object), "| reciprocal matches:", n_recip, "\n")
   cat("  score range:", sprintf("%.2f", min(object$score)), "-",
       sprintf("%.2f", max(object$score)), "\n")
   invisible(object)
+}
+
+# Bridge size, tolerant of objects serialized before this attribute was renamed
+# from "n_orthologs" to "n_bridge_genes". `n_orthologs` is now a per-gene column
+# on `substitutions` and means something different.
+.bridge_n <- function(x) {
+  n <- attr(x, "n_bridge_genes")
+  if (is.null(n)) attr(x, "n_orthologs") else n
 }

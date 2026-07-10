@@ -6,7 +6,10 @@
 \usage{
 plot_ortholog_vs_paralog(
   homolog_correlations,
-  delta_threshold = 0.3,
+  delta_threshold = NULL,
+  delta_scale = NULL,
+  show_invariant = TRUE,
+  show_r_boundary = TRUE,
   label_genes = NULL,
   max_auto_labels = 10
 )
@@ -17,6 +20,23 @@ plot_ortholog_vs_paralog(
 object also works (its precomputed r_ortholog / r_paralog are used).}
 
 \item{delta_threshold}{Boundary line offset above the diagonal. Default 0.3.}
+
+\item{delta_scale}{Scale on which \code{delta_threshold} is applied. Default
+\code{"z"}: Fisher's transform, \code{atanh(r_paralog) - atanh(r_ortholog)}.
+Correlation is bounded and its sampling variance depends on its own value,
+so a raw difference of 0.3 near r = 0 is not the same quantity as one near
+r = 0.9; the transform makes the two comparable. \code{"r"} thresholds the
+untransformed difference and reproduces the behaviour of versions before
+this argument existed.}
+
+\item{show_invariant}{Draw genes whose ortholog correlation is undefined in a
+strip left of the panel. Default TRUE. These are the \code{ortholog_invariant}
+class -- the completest substitutions, which no delta can score. Omitting
+them silently drops the genes that matter most.}
+
+\item{show_r_boundary}{When \code{delta_scale = "z"}, also draw the raw-scale
+boundary \code{y = x + delta_threshold} as a dotted line. It exits the unit
+square at \code{x = 1 - delta_threshold}. Default TRUE.}
 
 \item{label_genes}{Genes to label (e.g. \code{"RAMP1"}). NULL = auto-label
 the strongest candidates; FALSE = no labels.}

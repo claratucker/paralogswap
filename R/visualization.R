@@ -24,8 +24,16 @@ NULL
 #'   \code{attr(substitutions, "params")$delta_threshold} if present, else 0.3.
 #' @param n_label Label the top \code{n_label} genes by delta_r. Default 5;
 #'   0 suppresses labels.
-#'
 #' @return A ggplot object: gene rank (x) vs delta_r (y), threshold line marked.
+#'   \code{delta_z} is the Fisher-transformed difference and \code{delta_r} the
+#'   raw one; both are always reported, and \code{flagged} follows whichever
+#'   \code{delta_scale} names. Rows are sorted by the chosen statistic.
+#'   \code{ortholog_undefined} marks rows reached only under
+#'   \code{require_ortholog = FALSE}, where the ortholog correlation could not be
+#'   computed and zero was substituted for it. For those rows \code{delta_r}
+#'   equals \code{r_paralog} and is not a difference between two measured
+#'   correlations; read them as the \code{ortholog_invariant} class, where the
+#'   substitution is most complete and \code{delta_r} is least meaningful.
 #' @export
 plot_substitution_elbow <- function(substitutions,
                                     delta_threshold = NULL,
@@ -46,12 +54,23 @@ plot_substitution_elbow <- function(substitutions,
       p$delta_threshold else 0.3
   }
 
-  df <- df[order(-df$delta_r), ]
+  # Plot the statistic that was actually thresholded, and trust the object's
+  # `flagged`. Recomputing it here from delta_r silently disagreed with the table
+  # whenever detect_substitutions() thresholded on the z scale.
+  pp <- attr(substitutions, "params")
+  scale_used <- if (!is.null(pp) && !is.null(pp$delta_scale)) pp$delta_scale else "r"
+  stat_col <- if (scale_used == "z" && !is.null(df$delta_z)) "delta_z" else "delta_r"
+  df$stat <- df[[stat_col]]
+  df <- df[order(-df$stat), ]
   df$rank <- seq_len(nrow(df))
-  df$flagged <- df$delta_r >= delta_threshold
+  if (is.null(df$flagged)) df$flagged <- df$stat >= delta_threshold
   lab <- df[seq_len(min(n_label, nrow(df))), , drop = FALSE]
 
-  g <- ggplot2::ggplot(df, ggplot2::aes(x = .data$rank, y = .data$delta_r)) +
+  ylab <- if (stat_col == "delta_z")
+    expression(Delta * z == atanh(r[paralog]) - atanh(r[ortholog])) else
+    expression(Delta * r == r[paralog] - r[ortholog])
+
+  g <- ggplot2::ggplot(df, ggplot2::aes(x = .data$rank, y = .data$stat)) +
     ggplot2::geom_hline(yintercept = delta_threshold,
                         linetype = "dashed", colour = "grey40") +
     ggplot2::geom_line(colour = "grey65") +
@@ -61,11 +80,11 @@ plot_substitution_elbow <- function(substitutions,
       labels = c(`TRUE` = "flagged", `FALSE` = "not flagged"),
       name = NULL) +
     ggplot2::annotate("text", x = nrow(df), y = delta_threshold,
-                      label = sprintf("delta_threshold = %.2f", delta_threshold),
+                      label = sprintf("threshold = %.2f (%s scale)",
+                                      delta_threshold, scale_used),
                       hjust = 1, vjust = -0.6, size = 3, colour = "grey40") +
-    ggplot2::labs(x = "gene (ranked by delta_r)",
-                  y = expression(Delta * r == r[paralog] - r[ortholog]),
-                  title = "Substitution elbow") +
+    ggplot2::labs(x = paste0("gene (ranked by ", stat_col, ")"),
+                  y = ylab, title = "Substitution elbow") +
     ggplot2::theme_bw()
 
   if (n_label > 0) {
@@ -94,6 +113,21 @@ plot_substitution_elbow <- function(substitutions,
 #'   (\code{\link{compute_homolog_correlations}}). A \code{substitutions}
 #'   object also works (its precomputed r_ortholog / r_paralog are used).
 #' @param delta_threshold Boundary line offset above the diagonal. Default 0.3.
+#' @param delta_scale Scale on which \code{delta_threshold} is applied. Default
+#'   \code{"z"}: Fisher's transform, \code{atanh(r_paralog) - atanh(r_ortholog)}.
+#'   Correlation is bounded and its sampling variance depends on its own value,
+#'   so a raw difference of 0.3 near r = 0 is not the same quantity as one near
+#'   r = 0.9; the transform makes the two comparable. \code{"r"} thresholds the
+#'   untransformed difference and reproduces the behaviour of versions before
+#'   this argument existed.
+#'
+#' @param show_invariant Draw genes whose ortholog correlation is undefined in a
+#'   strip left of the panel. Default TRUE. These are the \code{ortholog_invariant}
+#'   class -- the completest substitutions, which no delta can score. Omitting
+#'   them silently drops the genes that matter most.
+#' @param show_r_boundary When \code{delta_scale = "z"}, also draw the raw-scale
+#'   boundary \code{y = x + delta_threshold} as a dotted line. It exits the unit
+#'   square at \code{x = 1 - delta_threshold}. Default TRUE.
 #' @param label_genes Genes to label (e.g. \code{"RAMP1"}). NULL = auto-label
 #'   the strongest candidates; FALSE = no labels.
 #' @param max_auto_labels Cap on auto-labelled candidates. Default 10.
@@ -101,7 +135,10 @@ plot_substitution_elbow <- function(substitutions,
 #' @return A ggplot object: r_ortholog (x) vs max r_paralog (y).
 #' @export
 plot_ortholog_vs_paralog <- function(homolog_correlations,
-                                     delta_threshold = 0.3,
+                                     delta_threshold = NULL,
+                                     delta_scale = NULL,
+                                     show_invariant = TRUE,
+                                     show_r_boundary = TRUE,
                                      label_genes = NULL,
                                      max_auto_labels = 10) {
   if (!requireNamespace("ggplot2", quietly = TRUE))
@@ -109,11 +146,19 @@ plot_ortholog_vs_paralog <- function(homolog_correlations,
 
   hc <- as.data.frame(homolog_correlations)
 
+  # Read the threshold and scale the object was actually built with. A bare
+  # default here would draw a boundary the calls were never made against.
+  pp <- attr(homolog_correlations, "params")
+  if (is.null(delta_threshold))
+    delta_threshold <- if (!is.null(pp$delta_threshold)) pp$delta_threshold else 0.3
+  if (is.null(delta_scale))
+    delta_scale <- if (!is.null(pp$delta_scale)) pp$delta_scale else "r"
+
   # Accept a precomputed substitutions object directly.
   if (all(c("r_ortholog", "r_paralog", "gene") %in% names(hc))) {
     df <- data.frame(gene = hc$gene, r_ortholog = hc$r_ortholog,
                      r_paralog = hc$r_paralog, stringsAsFactors = FALSE)
-    df <- df[is.finite(df$r_ortholog) & is.finite(df$r_paralog), , drop = FALSE]
+    df <- df[is.finite(df$r_paralog), , drop = FALSE]
   } else {
     # Collapse homolog_correlations to one row per focal gene.
     genes <- unique(hc$gene_a)
@@ -121,9 +166,14 @@ plot_ortholog_vs_paralog <- function(homolog_correlations,
       sub  <- hc[hc$gene_a == gene, ]
       orth <- sub[sub$relationship == "ortholog" & is.finite(sub$r), ]
       para <- sub[sub$relationship == "paralog"  & is.finite(sub$r), ]
-      if (nrow(orth) == 0 || nrow(para) == 0) return(NULL)
+      # A gene whose ortholog correlation is undefined but whose paralogs are
+      # finite is the ortholog_invariant class: the completest substitution, and
+      # the one delta cannot score. Retain it with r_ortholog = NA; it is drawn
+      # in the strip, not the scatter.
+      if (nrow(para) == 0) return(NULL)
       best <- para[which.max(para$r), ]
-      data.frame(gene = gene, r_ortholog = orth$r[1],
+      data.frame(gene = gene,
+                 r_ortholog = if (nrow(orth)) orth$r[1] else NA_real_,
                  r_paralog = best$r, stringsAsFactors = FALSE)
     })
     df <- do.call(rbind, recs)
@@ -133,13 +183,30 @@ plot_ortholog_vs_paralog <- function(homolog_correlations,
     return(ggplot2::ggplot() + ggplot2::theme_bw() +
              ggplot2::labs(title = "No gene has both an ortholog and a paralog correlation"))
 
+  inv <- df[!is.finite(df$r_ortholog), , drop = FALSE]   # ortholog_invariant
+  df  <- df[is.finite(df$r_ortholog), , drop = FALSE]
+  if (nrow(df) == 0)
+    return(ggplot2::ggplot() + ggplot2::theme_bw() +
+             ggplot2::labs(title = "No gene has a measurable ortholog correlation"))
+
   df$delta_r <- df$r_paralog - df$r_ortholog
-  df$candidate <- df$delta_r >= delta_threshold
+  df$delta_z <- .fisher_z(df$r_paralog) - .fisher_z(df$r_ortholog)
+  df$candidate <- if (delta_scale == "z") df$delta_z >= delta_threshold else
+                                          df$delta_r >= delta_threshold
+  if (!is.null(hc$flagged) && !is.null(hc$gene))
+    df$candidate <- hc$flagged[match(df$gene, hc$gene)]  # genes in `inv` are absent from df; match() drops them
+
+  stat_col <- if (delta_scale == "z") "delta_z" else "delta_r"
   rng <- range(c(df$r_ortholog, df$r_paralog), na.rm = TRUE)
+  .pad <- 0.12 * diff(rng)
+  .strip_x <- rng[1] - .pad / 2
+  .xlim <- c(rng[1] - .pad,
+             rng[2])   # rng spans BOTH axes: clipping to max(r_paralog) hides
+                       # genes whose ortholog correlation exceeds every paralog
 
   if (is.null(label_genes)) {
     lab <- df[df$candidate, , drop = FALSE]
-    lab <- lab[order(-lab$delta_r), , drop = FALSE]
+    lab <- lab[order(-lab[[stat_col]]), , drop = FALSE]
     if (nrow(lab) > max_auto_labels) lab <- lab[seq_len(max_auto_labels), , drop = FALSE]
   } else if (isFALSE(label_genes)) {
     lab <- df[0, , drop = FALSE]
@@ -149,21 +216,64 @@ plot_ortholog_vs_paralog <- function(homolog_correlations,
 
   g <- ggplot2::ggplot(df, ggplot2::aes(.data$r_ortholog, .data$r_paralog)) +
     ggplot2::geom_abline(slope = 1, intercept = 0, colour = "grey40") +
-    ggplot2::geom_abline(slope = 1, intercept = delta_threshold,
-                         linetype = "dashed", colour = "grey65") +
+    # Flagging boundary. On the z scale it is a curve, y = tanh(atanh(x) + t),
+    # which stays inside the unit square. The straight r-scale line y = x + t is
+    # drawn faintly for comparison: it leaves the square at x = 1 - t, above
+    # which no gene can be flagged however well its paralog tracks.
+    ggplot2::geom_line(
+      data = local({
+        xx <- seq(max(-0.999, rng[1]), min(0.999, rng[2]), length.out = 400)
+        yy <- if (delta_scale == "z") tanh(atanh(xx) + delta_threshold) else
+                                      xx + delta_threshold
+        data.frame(r_ortholog = xx, r_paralog = yy)[yy <= 1, ]
+      }),
+      linetype = "dashed", colour = "grey55") +
     ggplot2::geom_point(ggplot2::aes(colour = .data$candidate),
                         size = 1.7, alpha = 0.85) +
     ggplot2::scale_colour_manual(
       values = c(`TRUE` = "#c0392b", `FALSE` = "grey55"),
       labels = c(`TRUE` = "candidate", `FALSE` = "conserved"), name = NULL) +
-    ggplot2::coord_equal(xlim = rng, ylim = rng) +
+    # coord_fixed, not coord_cartesian + aspect.ratio: the latter squares the
+    # panel, not the data units, so the y = x diagonal is drawn off 45 degrees
+    # whenever the reserved strip makes the x-range wider than the y-range.
+    ggplot2::coord_fixed(ratio = 1, xlim = .xlim, ylim = rng) +
+
     ggplot2::labs(
       x = expression(r[ortholog]),
       y = expression(max ~ r[paralog]),
       title = "Ortholog vs. best paralog correlation",
-      subtitle = sprintf("above the diagonal: paralog tracks better; dashed line: delta_r = %.2f",
-                         delta_threshold)) +
+      subtitle = sprintf("%d candidate%s; %d gene%s with undefined ortholog correlation%s",
+                         sum(df$candidate, na.rm = TRUE),
+                         if (sum(df$candidate, na.rm = TRUE) == 1) "" else "s",
+                         nrow(inv), if (nrow(inv) == 1) "" else "s",
+                         if (!isTRUE(show_invariant) && nrow(inv) > 0) " (hidden)" else "")) +
     ggplot2::theme_bw()
+
+  # ---- ortholog_invariant genes: a strip, not a coordinate -----------------
+  # These have no r_ortholog. Placing them at x = 0 would assert exactly what
+  # detect_substitutions() marks as an assertion -- that a silent ortholog is
+  # uncorrelated with the focal gene. They belong outside the panel.
+  if (isTRUE(show_invariant) && nrow(inv) > 0) {
+    inv$r_ortholog <- .strip_x
+    inv$candidate <- TRUE
+    g <- g +
+      ggplot2::geom_vline(xintercept = rng[1] - .pad * 0.10,
+                          colour = "grey75", linewidth = 0.3) +
+      ggplot2::geom_point(data = inv, shape = 21, fill = NA,
+                          colour = "#c0392b", size = 1.9, stroke = 0.6) +
+      ggplot2::annotate("text", x = .strip_x, y = rng[2],
+                        label = "ortholog\nundefined", size = 2.6,
+                        colour = "grey40", vjust = 1, lineheight = 0.9)
+  }
+
+  # The raw-scale boundary, for comparison. It leaves the unit square at
+  # x = 1 - delta_threshold: above that, no gene can be flagged on the r scale
+  # however well its paralog tracks. Genes between the two lines are exactly
+  # those the Fisher transform recovers.
+  if (isTRUE(show_r_boundary) && delta_scale == "z") {
+    g <- g + ggplot2::geom_abline(slope = 1, intercept = delta_threshold,
+                                  linetype = "dotted", colour = "grey80")
+  }
 
   if (nrow(lab) > 0) {
     if (requireNamespace("ggrepel", quietly = TRUE)) {

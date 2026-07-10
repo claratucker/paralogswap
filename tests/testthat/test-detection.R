@@ -112,9 +112,32 @@ test_that("delta_threshold controls flagging", {
   fx <- make_detection_fixture()
   hc <- compute_homolog_correlations(fx$mca, fx$mcb, fx$mmc, fx$hg,
                                      "spA","spB", focal_genes="gX", verbose=FALSE)
-  # gX has delta_r ~1.49 (r_para ~0.87 vs r_orth ~ -0.62)
-  expect_false(detect_substitutions(hc, delta_threshold = 1.6)$flagged[1])
-  expect_true(detect_substitutions(hc, delta_threshold = 1.0)$flagged[1])
+  # Derive the fixture's own statistics rather than hard-coding a threshold
+  # tuned to whatever the fixture happened to produce. gX has a strongly
+  # negative ortholog correlation and a positive paralog correlation, so
+  # delta_z substantially exceeds delta_r.
+  base <- detect_substitutions(hc, delta_threshold = -Inf, delta_scale = "r")
+  d_r <- base$delta_r[1]; d_z <- base$delta_z[1]
+  expect_gt(d_z, d_r)   # the transform widens the gap when r_ortholog < 0
+
+  # r scale: flags iff delta_r clears the threshold
+  expect_false(detect_substitutions(hc, delta_threshold = d_r + 0.1,
+                                    delta_scale = "r")$flagged[1])
+  expect_true(detect_substitutions(hc, delta_threshold = d_r - 0.1,
+                                   delta_scale = "r")$flagged[1])
+
+  # z scale: same, against delta_z
+  expect_false(detect_substitutions(hc, delta_threshold = d_z + 0.1,
+                                    delta_scale = "z")$flagged[1])
+  expect_true(detect_substitutions(hc, delta_threshold = d_z - 0.1,
+                                   delta_scale = "z")$flagged[1])
+
+  # flagged must follow the scale it was thresholded on, never the other column
+  t_mid <- (d_r + d_z) / 2   # lies between the two statistics
+  expect_true(detect_substitutions(hc, delta_threshold = t_mid,
+                                   delta_scale = "z")$flagged[1])
+  expect_false(detect_substitutions(hc, delta_threshold = t_mid,
+                                    delta_scale = "r")$flagged[1])
 })
 
 test_that("min_pairs guard errors on too-small grid", {

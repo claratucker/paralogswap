@@ -1,4 +1,19 @@
 
+# Fisher's variance-stabilizing transform for a correlation coefficient.
+#
+# delta_r = r_paralog - r_ortholog treats correlation as an interval scale, but
+# r is bounded and its sampling variance depends on its own value: 0.0 -> 0.3 and
+# 0.6 -> 0.9 are not the same distance. atanh() maps r to a scale on which
+# differences are comparable and (for Pearson) approximately normal with variance
+# 1/(n-3). Threshold on z, report r.
+#
+# r = +/-1 gives Inf. Reachable at min_pairs = 10 with a gene expressed in few
+# metacells. Clamp rather than propagate Inf, which would silently place the most
+# extreme substitution at the top of the table with an unplottable value.
+.fisher_z <- function(r, eps = 1e-7) {
+  atanh(pmax(pmin(r, 1 - eps), -1 + eps))
+}
+
 #' Cross-species homolog correlations over the metacell grid
 #'
 #' For each focal gene in species A, correlates its expression across matched
@@ -147,10 +162,20 @@ compute_homolog_correlations <- function(metacells_a, metacells_b,
 #'   method is therefore least sensitive at the completest substitutions. Read
 #'   the dropped table, not only the flagged one.
 #'
+#' @param delta_scale Scale on which \code{delta_threshold} is applied. Default
+#'   \code{"z"}: Fisher's transform, \code{atanh(r_paralog) - atanh(r_ortholog)}.
+#'   Correlation is bounded and its sampling variance depends on its own value,
+#'   so a raw difference of 0.3 near r = 0 is not the same quantity as one near
+#'   r = 0.9; the transform makes the two comparable. \code{"r"} thresholds the
+#'   untransformed difference and reproduces the behaviour of versions before
+#'   this argument existed.
+#'
 #' @export
 detect_substitutions <- function(homolog_correlations,
                                  delta_threshold = 0.3,
+                                 delta_scale = c("z", "r"),
                                  require_ortholog = TRUE) {
+  delta_scale <- match.arg(delta_scale)
 hc <- homolog_correlations
   hcp <- attr(hc, "params")
   min_pairs <- if (!is.null(hcp) && !is.null(hcp$min_pairs)) hcp$min_pairs else NA_integer_
@@ -196,8 +221,19 @@ hc <- homolog_correlations
       .drop(g, reason, orth, para); next
     }
     if (nrow(para) == 0) { .drop(g, "no_paralog_correlation", orth, para); next }
+    # atanh is monotone, so the best paralog is the same before and after
+    # transformation; only the magnitude of the gap changes.
     best <- para[which.max(para$r), ]
-    delta <- best$r - (if (is.na(r_orth)) 0 else r_orth)
+    orth_missing <- is.na(r_orth)
+    # Reached only when require_ortholog = FALSE. Substituting 0 for an undefined
+    # ortholog correlation asserts that a silent ortholog is uncorrelated with
+    # the focal gene, which is a claim, not a fallback. The value is retained for
+    # ranking but the row is marked: delta_r = 0.54 means something different
+    # here than where the ortholog was measured.
+    r_orth_used <- if (orth_missing) 0 else r_orth
+    delta   <- best$r - r_orth_used
+    delta_z <- .fisher_z(best$r) - .fisher_z(r_orth_used)
+    stat <- if (delta_scale == "z") delta_z else delta
     rows[[length(rows)+1L]] <- data.frame(
       gene = g,
       ortholog = if (nrow(orth)) orth$gene_b[1] else NA,
@@ -206,7 +242,9 @@ hc <- homolog_correlations
       r_ortholog = r_orth,
       r_paralog = best$r,
       delta_r = delta,
-      flagged = delta >= delta_threshold,
+      delta_z = delta_z,
+      ortholog_undefined = orth_missing,
+      flagged = stat >= delta_threshold,
       stringsAsFactors = FALSE)
   }
 out <- do.call(rbind, rows)
@@ -215,11 +253,12 @@ out <- do.call(rbind, rows)
       gene = character(0), ortholog = character(0),
       n_orthologs = integer(0),
       best_paralog = character(0), r_ortholog = numeric(0),
-      r_paralog = numeric(0), delta_r = numeric(0),
+      r_paralog = numeric(0), delta_r = numeric(0), delta_z = numeric(0),
+      ortholog_undefined = logical(0),
       flagged = logical(0), stringsAsFactors = FALSE)
   } else {
     rownames(out) <- NULL
-    out <- out[order(-out$delta_r), ]
+    out <- out[order(-out[[if (delta_scale == "z") "delta_z" else "delta_r"]]), ]
   }
 attr(out, "dropped") <- if (length(dropped))
     do.call(rbind, dropped) else
@@ -227,6 +266,7 @@ attr(out, "dropped") <- if (length(dropped))
                n_pairs = integer(0), best_paralog = character(0),
                r_paralog = numeric(0), stringsAsFactors = FALSE) 
 attr(out, "params") <- list(delta_threshold = delta_threshold,
+                              delta_scale = delta_scale,
                               require_ortholog = require_ortholog)
   class(out) <- c("substitutions", "data.frame")
   out
@@ -234,8 +274,15 @@ attr(out, "params") <- list(delta_threshold = delta_threshold,
 
 #' @export
 summary.substitutions <- function(object, ...) {
+  pr <- attr(object, "params")
+  sc <- if (!is.null(pr$delta_scale)) pr$delta_scale else "r"
   cat("substitutions:", nrow(object), "focal genes scored\n")
-  cat("  flagged (delta_r >= threshold):", sum(object$flagged), "\n")
+  cat("  flagged (delta_", sc, " >= ", pr$delta_threshold, "): ",
+      sum(object$flagged), "\n", sep = "")
+  if (!is.null(object$ortholog_undefined) && any(object$ortholog_undefined))
+    cat("  rows with undefined ortholog correlation:",
+        sum(object$ortholog_undefined),
+        "(delta is r_paralog, not a difference)\n")
   cat("  delta_r range:", sprintf("%.2f", min(object$delta_r)), "-",
       sprintf("%.2f", max(object$delta_r)), "\n")
 d <- attr(object, "dropped")

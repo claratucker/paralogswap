@@ -51,7 +51,13 @@ N_PCS         <- 30
 N_VAR_GENES   <- 2000
 ASSAY         <- "RNA"
 SLOT          <- "data"
-COR_METHOD    <- "spearman"      # code default (c("spearman","pearson"))
+COR_METHOD_PROFILE <- "pearson"  # Stages 3-4: profile correlation ACROSS GENES.
+                                 # Profiles are gene-wise standardized first, so the
+                                 # cross-species scale difference Spearman guarded
+                                 # against is already removed. Matches SAMap.
+COR_METHOD_GENE    <- "spearman" # Stage 6: one gene ACROSS METACELL PAIRS. A different
+                                 # axis, untouched by standardization, where one
+                                 # high-expressing metacell can dominate a Pearson fit.
 
 GAMMA         <- 20
 K_KNN         <- 5
@@ -59,7 +65,11 @@ MIN_CELLS     <- 10
 MUTUAL_K      <- 5               # match_metacells is mutual-kNN; reciprocal-best -> ~9 pairs (wrong)
 MIN_PAIRS     <- 10
 MIN_CORRESPONDENCE <- 0.3
-DELTA_THRESHOLD    <- 0.3
+DELTA_THRESHOLD    <- 0.3       # applied on DELTA_SCALE, not on raw delta_r
+DELTA_SCALE        <- "z"       # Fisher: atanh(r_paralog) - atanh(r_ortholog).
+                                # On the raw scale the boundary leaves the unit
+                                # square at r_ortholog = 1 - 0.3, so conserved-
+                                # ortholog genes are structurally unflaggable.
 
 MAKE_PLOTS <- TRUE
 FIG_DIR    <- "tests/manual/plots"  # already .gitignored; change if you add validation/figures/
@@ -221,7 +231,7 @@ banner("STAGE 3  match_clusters")
 correspondence <- match_clusters(
   clusters_a = sc_lemur, clusters_b = sc_human, homology_graph = hg_broad,
   species_a = LEMUR, species_b = HUMAN,
-  cor_method = COR_METHOD, min_correspondence = MIN_CORRESPONDENCE,
+  cor_method = COR_METHOD_PROFILE, min_correspondence = MIN_CORRESPONDENCE,
   assay = ASSAY, slot = SLOT, verbose = TRUE
 )
 s3_write_rds(correspondence, file.path(S3_RESULTS, "lemur_human_cluster_correspondence.rds"))
@@ -253,7 +263,7 @@ metacell_correspondence <- match_metacells(
   metacells_a = mc_lemur, metacells_b = mc_human,
   correspondence = correspondence, homology_graph = hg_broad,
   species_a = LEMUR, species_b = HUMAN,
-  cor_method = COR_METHOD, mutual_k = MUTUAL_K, verbose = TRUE
+  cor_method = COR_METHOD_PROFILE, mutual_k = MUTUAL_K, verbose = TRUE
 )
 s3_write_rds(metacell_correspondence,
              file.path(S3_RESULTS, "lemur_human_metacell_correspondence.rds"))
@@ -268,13 +278,14 @@ homolog_correlations <- compute_homolog_correlations(
   metacell_correspondence = metacell_correspondence, homology_graph = hg_focal,
   species_a = LEMUR, species_b = HUMAN,
   focal_genes = unname(FOCAL_LEMUR),      # lemur (species-A) RAMP ids
-  cor_method = COR_METHOD, min_pairs = MIN_PAIRS, verbose = TRUE
+  cor_method = COR_METHOD_GENE, min_pairs = MIN_PAIRS, verbose = TRUE
 )
 s3_write_rds(homolog_correlations,
              file.path(S3_RESULTS, "lemur_human_homolog_correlations.rds"))
 
 substitutions <- detect_substitutions(
-  homolog_correlations, delta_threshold = DELTA_THRESHOLD, require_ortholog = TRUE
+  homolog_correlations, delta_threshold = DELTA_THRESHOLD,
+  delta_scale = DELTA_SCALE, require_ortholog = TRUE
 )
 s3_write_rds(substitutions, file.path(S3_RESULTS, "lemur_human_substitutions.rds"))
 

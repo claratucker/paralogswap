@@ -37,8 +37,8 @@ test_that("match_metacells produces pairs via mutual-kNN within matched clusters
     species_a="spA", species_b="spB",
     relationship="ortholog", ortholog_type="one2one"), verbose=FALSE)
   # correspondence: cluster 0<->0, 1<->1 (toys share structure)
-  cc <- match_clusters(oa, ob, hg, "spA","spB", verbose=FALSE)
-  skip_if(sum(cc$reciprocal) == 0, "no reciprocal cluster matches in toy")
+  cc <- match_clusters(oa, ob, hg, "spA","spB", min_correspondence = 0, verbose=FALSE)
+  skip_if(sum(cc$mutual_best) == 0, "no mutually-best cluster matches in toy")
   mmc <- match_metacells(mca, mcb, cc, hg, "spA","spB",
                          mutual_k = 3, verbose = FALSE)
   expect_s3_class(mmc, "metacell_correspondence")
@@ -55,9 +55,48 @@ test_that("larger mutual_k yields at least as many pairs", {
     gene_a=paste0("g",1:100), gene_b=paste0("g",1:100),
     species_a="spA", species_b="spB",
     relationship="ortholog", ortholog_type="one2one"), verbose=FALSE)
-  cc <- match_clusters(oa, ob, hg, "spA","spB", verbose=FALSE)
-  skip_if(sum(cc$reciprocal) == 0)
+  cc <- match_clusters(oa, ob, hg, "spA","spB", min_correspondence = 0, verbose=FALSE)
+  skip_if(sum(cc$mutual_best) == 0)
   n3 <- nrow(match_metacells(mca,mcb,cc,hg,"spA","spB",mutual_k=1,verbose=FALSE))
   n5 <- nrow(match_metacells(mca,mcb,cc,hg,"spA","spB",mutual_k=5,verbose=FALSE))
   expect_gte(n5, n3)
+})
+
+test_that("standardize = FALSE reproduces unstandardized matching", {
+  oa <- make_toy_clustered(1); ob <- make_toy_clustered(2)
+  mca <- build_metacells(oa, gamma=5, n_var_genes=50, verbose=FALSE)
+  mcb <- build_metacells(ob, gamma=5, n_var_genes=50, verbose=FALSE)
+  hg <- as_homology_graph(data.frame(
+    gene_a=paste0("g",1:100), gene_b=paste0("g",1:100),
+    species_a="spA", species_b="spB",
+    relationship="ortholog", ortholog_type="one2one"), verbose=FALSE)
+  cc <- match_clusters(oa, ob, hg, "spA","spB", min_correspondence = 0, verbose=FALSE)
+  skip_if(sum(cc$reciprocal) == 0)
+
+  off <- match_metacells(mca, mcb, cc, hg, "spA","spB",
+                         standardize = FALSE, verbose = FALSE)
+  on  <- match_metacells(mca, mcb, cc, hg, "spA","spB",
+                         standardize = TRUE, verbose = FALSE)
+  # standardization must change the matching; if not, the argument is inert
+  expect_false(identical(paste(off$metacell_a, off$metacell_b),
+                         paste(on$metacell_a, on$metacell_b)))
+  # coverage counts every metacell, not only those in visited clusters
+  n <- attr(on, "n_metacells"); u <- attr(on, "unmatched")
+  expect_equal(u[["a"]], n[["a"]] - length(unique(on$metacell_a)))
+  expect_equal(u[["b"]], n[["b"]] - length(unique(on$metacell_b)))
+})
+
+test_that("match_clusters separates mutual_best from passes", {
+  oa <- make_toy_clustered(1); ob <- make_toy_clustered(2)
+  hg <- as_homology_graph(data.frame(
+    gene_a=paste0("g",1:100), gene_b=paste0("g",1:100),
+    species_a="spA", species_b="spB",
+    relationship="ortholog", ortholog_type="one2one"), verbose=FALSE)
+  cc <- match_clusters(oa, ob, hg, "spA","spB",
+                       min_correspondence = 0.99, verbose = FALSE)
+  # an impossible threshold must not destroy the structural match
+  expect_true(any(cc$mutual_best))
+  expect_false(any(cc$passes))
+  expect_false(any(cc$reciprocal))
+  expect_equal(cc$reciprocal, cc$mutual_best & cc$passes)
 })

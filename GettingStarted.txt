@@ -1,0 +1,227 @@
+Getting started with paralogswap
+===============================
+
+This guide covers what paralogswap is for, a worked two-species run, and how to
+read its output. For installation see README. For the full three-species
+validation see vignettes/validation.Rmd.
+
+
+Scope
+-----
+
+paralogswap is intended for researchers who have a cross-species comparison and
+want to know what the one-to-one ortholog reduction discarded. Most integration
+methods require shared gene names and therefore accept only one-to-one
+orthologs. paralogswap runs on the edges those methods drop. It audits a
+comparison rather than replacing it.
+
+If you already coarse-grain into metacells, the measurement substrate is the
+same. If you have a specific gene family in mind, restricting to a focal gene
+set makes a targeted two-species run inexpensive.
+
+paralogswap is not an atlas-alignment engine. For de novo cross-species cell and
+gene mapping at large evolutionary distances, see SAMap (Tarashansky et al.
+2021). It does not test the ortholog conjecture, which is GeneSpectra's question
+(Song et al. 2024). It reads homology from curated Ensembl Compara, so species
+absent from Ensembl require a user-supplied edge table through
+`as_homology_graph`, from OrthoFinder, eggNOG, or a reconciled gene tree.
+
+
+A two-species run
+-----------------
+
+Begin with two Seurat objects holding raw counts, one per species. Gene names
+must be in the same identifier space as the homology graph you will build. Both
+atlases used here carry gene symbols as rownames, so the graph is built with
+`id_type = "symbol"`.
+
+    library(paralogswap)
+
+    focal <- c("RAMP1", "RAMP2", "RAMP3")
+
+Two homology graphs are built per species pair. The broad graph carries
+orthologs only and bridges the matching stages. The focal graph carries the
+paralog edges that detection compares against. `genes` bounds the paralog pull,
+which is otherwise genome-wide and will exceed biomaRt's request ceiling.
+
+    hg_broad <- build_homology_graph(
+      species_a = "mmurinus", species_b = "hsapiens",
+      genes = rownames(lemur_lung), id_type = "symbol",
+      ensembl_release = 116, include_paralogs = FALSE
+    )
+
+    hg_focal <- build_homology_graph(
+      species_a = "mmurinus", species_b = "hsapiens",
+      genes = focal, id_type = "symbol",
+      ensembl_release = 116, include_paralogs = TRUE
+    )
+
+    summary(hg_broad)
+
+Cluster each species independently. No cross-species information is used here;
+correspondence is derived from expression in the next step.
+
+    sc <- cluster_species(list(lemur = lemur_lung, human = human_lung))
+
+Derive coarse cluster correspondence across species, then coarse-grain each
+species into metacells and match them within the reciprocally matched clusters.
+
+    cc <- match_clusters(sc[["lemur"]], sc[["human"]], hg_broad,
+                         species_a = "mmurinus", species_b = "hsapiens")
+    summary(cc)
+
+    mc_lemur <- build_metacells(sc[["lemur"]], gamma = 20)
+    mc_human <- build_metacells(sc[["human"]], gamma = 20)
+
+    mmc <- match_metacells(mc_lemur, mc_human, cc, hg_broad,
+                           species_a = "mmurinus", species_b = "hsapiens")
+    summary(mmc)
+
+Correlate each focal gene against its ortholog and paralogs over the matched
+grid, then flag substitutions.
+
+    hc <- compute_homolog_correlations(mc_lemur, mc_human, mmc, hg_focal,
+                                       species_a = "mmurinus",
+                                       species_b = "hsapiens",
+                                       focal_genes = focal)
+
+    subs <- detect_substitutions(hc)
+    subs
+
+
+Choosing gamma
+--------------
+
+`build_metacells` defaults to `gamma = 20`. The package selects nothing.
+`plot_graining_curve` reports two single-species fidelity quantities against
+gamma: within-metacell coherence, and correlation preservation on a
+variance-selected gene panel. Read the largest gamma still on the preservation
+plateau and pass it to `build_metacells`.
+
+    p <- plot_graining_curve(sc[["lemur"]])
+    p
+    attr(p, "curve")   # per-gamma values, for the record
+
+The curve touches neither the homology graph, the second species, nor the
+ortholog and paralog distinction, so it is computable before detection exists
+and cannot be tuned by the number of substitutions found.
+
+
+Reading the output
+------------------
+
+`substitutions` holds one row per scoreable focal gene, sorted by descending
+`delta_r`.
+
+    gene ortholog n_orthologs best_paralog r_ortholog r_paralog delta_r flagged
+    RAMP1    RAMP1           1        RAMP2     -0.058     0.544   0.602    TRUE
+    RAMP2    RAMP2           1        RAMP3      0.625     0.486  -0.139   FALSE
+
+Lemur RAMP1 does not track its annotated ortholog, and the paralog carrying the
+cross-species pattern is human RAMP2. Lemur RAMP2 is not flagged: its ortholog
+correlation exceeds every paralog, so `delta_r` is negative.
+
+`n_orthologs` reports how many ortholog edges the focal gene has. A value above
+one means `delta_r` depends on which ortholog was taken, and the ambiguity is
+reported rather than resolved.
+
+The threshold is a default, not a rule. `plot_substitution_elbow` draws the line
+detection used against the ranked `delta_r` distribution, and
+`plot_ortholog_vs_paralog` renders `delta_r` as distance above the diagonal.
+
+    plot_substitution_elbow(subs)
+    plot_ortholog_vs_paralog(hc)
+
+
+Genes that cannot be scored
+---------------------------
+
+`delta_r` subtracts a measured ortholog correlation from the best paralog
+correlation. When the ortholog is unexpressed in the other species, that
+correlation is undefined rather than zero, and the gene cannot be scored. These
+genes are not discarded silently.
+
+    attr(subs, "dropped")
+
+       gene             reason ortholog n_pairs best_paralog r_paralog
+      RAMP3 ortholog_invariant    RAMP3     192        RAMP2     0.486
+
+The reasons are:
+
+  no_ortholog_edge       The focal gene has no ortholog in the homology graph.
+
+  ortholog_too_sparse    The ortholog was observed in fewer than `min_pairs`
+                         matched metacell pairs.
+
+  ortholog_invariant     The ortholog was observed across the full grid but
+                         shows no variance, while paralog correlations remain
+                         defined. This is the signature of a substitution whose
+                         ortholog has been silenced in the other species.
+
+  focal_gene_invariant   No correlation is defined at full coverage, because the
+                         focal gene itself shows no variance. The gene is
+                         unmeasurable in this species, and no run anchored here
+                         can evaluate it.
+
+  no_paralog_correlation The ortholog was scored but no paralog correlation was
+                         estimable.
+
+The method is therefore least sensitive at the most complete substitutions,
+where the ortholog has been lost or silenced rather than merely diverged. Read
+the dropped table, not only the flagged one.
+
+
+Directionality
+--------------
+
+`compute_homolog_correlations` scores focal genes of species A against homologs
+in species B, so a run flags genes of its anchor species only. An outlier
+residing on the other species requires a run anchored there.
+
+Because metacell matching is mutual k-nearest-neighbor, the pairing condition is
+symmetric, and a grid computed with one species as anchor may be relabelled for
+a run anchored on the other without recomputation. Only the focal homology graph
+must be rebuilt.
+
+
+Correcting the homology graph
+-----------------------------
+
+Curated orthology is fallible, and an error in a gene tree severs a gene's
+entire homology neighbourhood rather than a single edge, since orthology and
+paralogy are read from the same tree. `corrections` accepts an `action` column
+taking "add" or "remove".
+
+    CORRECTIONS <- rbind(
+      data.frame(gene_a = "RAMP2", gene_b = "Ramp2",
+                 species_a = "mmurinus", species_b = "mmusculus",
+                 relationship = "ortholog", ortholog_type = "one2one",
+                 source = "eggnog", action = "add"),
+      data.frame(gene_a = c("Ramp2", "Ramp2"), gene_b = c("Ramp1", "Ramp3"),
+                 species_a = "mmusculus", species_b = "mmusculus",
+                 relationship = "paralog", ortholog_type = NA_character_,
+                 source = "eggnog", action = "add")
+    )
+
+Removals are applied before additions, match irrespective of edge orientation,
+and are retained in `attr(hg, "excluded")` with their original source, so an
+override is recorded rather than hidden. Corrections must be written in the same
+identifier space as the graph they join, since edges match by string and no
+conversion is performed.
+
+Removal is necessary rather than convenient. `detect_substitutions` takes
+`max(r_paralog)`, so supplying correct edges cannot out-vote an incorrect one: a
+spurious paralog may win the maximum by chance.
+
+
+Troubleshooting
+---------------
+
+Ensembl's BioMart service is intermittently unavailable and biomaRt has no
+retry. Pass `mirror = "useast"` or "asia" to route around the main host. Note
+that biomaRt does not permit a mirror and a pinned `ensembl_release` in the same
+call; when a mirror is used, the current release is served.
+
+If `match_clusters` reports no bridge, the homology graph and the expression
+objects are in different identifier spaces. Check `rownames()` against
+`hg$gene_a`.

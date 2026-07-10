@@ -12,8 +12,15 @@
 #' @param species_a,species_b Species identifiers matching the graph's
 #'   \code{species_a}/\code{species_b} columns. If NULL, inferred from the graph
 #'   when it contains exactly one cross-species pair.
-#' @param cor_method \code{"spearman"} (default, robust to cross-species scale
-#'   differences) or \code{"pearson"}.
+#' @param cor_method \code{"pearson"} (default) or \code{"spearman"}. Spearman
+#'   was formerly the default, on the grounds that absolute expression scales
+#'   differ across species and platforms. \code{center_genes} and
+#'   \code{scale_genes} now remove that difference directly, so Pearson on
+#'   standardized profiles is both the closer analog of SAMap's preprocessing
+#'   and the cheaper computation. \code{\link{compute_homolog_correlations}}
+#'   keeps Spearman by default: it correlates one gene across metacell pairs,
+#'   an axis standardization does not touch, where a single high-expressing
+#'   metacell can dominate a Pearson fit.
 #' @param min_correspondence Minimum correlation for a match to be reported.
 #'   Default 0.3; see \code{plot_correspondence_elbow}. Note that this gates the
 #'   \code{reciprocal} flag only; every cluster pair is scored and returned.
@@ -30,14 +37,18 @@
 #' @param verbose Print progress. Default TRUE.
 #'
 #' @return A \code{cluster_correspondence}: data.frame of cluster_a, cluster_b,
-#'   score, reciprocal (logical). Reciprocal best matches passing
-#'   \code{min_correspondence} are marked \code{reciprocal = TRUE}. The full
-#'   correlation matrix is attached as \code{attr(x, "cor_matrix")}.
-#'
+#'   score, and three logicals. \code{mutual_best} is TRUE when each cluster is
+#'   the other's highest-scoring partner, a structural property of the
+#'   correlation matrix. \code{passes} is TRUE when the score reaches
+#'   \code{min_correspondence}. \code{reciprocal}, which downstream stages
+#'   consume, is their conjunction. One row per A-cluster: every A-cluster's best
+#'   B-cluster is reported, so absence from the table means the cluster does not
+#'   exist, not that it scored poorly. The full correlation matrix is attached as
+#'   \code{attr(x, "cor_matrix")}.
 #' @export
 match_clusters <- function(clusters_a, clusters_b, homology_graph,
                            species_a = NULL, species_b = NULL,
-                           cor_method = c("spearman", "pearson"),
+                           cor_method = c("pearson", "spearman"),
                            min_correspondence = 0.3,
                            center_genes = TRUE,
                            scale_genes = TRUE,
@@ -132,9 +143,16 @@ if (isTRUE(verbose)) message("Bridging on ", nrow(o2o),
                              match(best_b_for_a, colnames(cormat)))],
     stringsAsFactors = FALSE
   )
-  pairs$reciprocal <- mapply(function(a, b) identical(best_a_for_b[[b]], a),
-                             pairs$cluster_a, pairs$cluster_b) &
-                      pairs$score >= min_correspondence
+  # Two independent properties, kept separate. mutual_best is structural: A's
+  # best B also names A as its best. passes is a magnitude judgement against
+  # min_correspondence. Bundling them makes it impossible to ask whether the
+  # matching found the right pair separately from whether the score was large,
+  # which is the question when the correlation scale changes (e.g. under
+  # standardization). `reciprocal` retains the old meaning: both must hold.
+  pairs$mutual_best <- mapply(function(a, b) identical(best_a_for_b[[b]], a),
+                              pairs$cluster_a, pairs$cluster_b)
+  pairs$passes     <- pairs$score >= min_correspondence
+  pairs$reciprocal <- pairs$mutual_best & pairs$passes
 
   pairs <- pairs[order(-pairs$score), ]
   rownames(pairs) <- NULL
@@ -180,6 +198,9 @@ summary.cluster_correspondence <- function(object, ...) {
   cat("cluster_correspondence:\n")
   cat("  ortholog bridge:", .bridge_n(object), "one2one genes\n")
   cat("  A-clusters:", nrow(object), "| reciprocal matches:", n_recip, "\n")
+  if (!is.null(object$mutual_best))
+    cat("  mutually best:", sum(object$mutual_best),
+        "| of those, passing threshold:", sum(object$mutual_best & object$passes), "\n")
   cat("  score range:", sprintf("%.2f", min(object$score)), "-",
       sprintf("%.2f", max(object$score)), "\n")
   invisible(object)

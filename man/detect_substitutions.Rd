@@ -7,6 +7,7 @@
 detect_substitutions(
   homolog_correlations,
   delta_threshold = 0.3,
+  delta_scale = c("z", "r"),
   require_ortholog = TRUE
 )
 }
@@ -15,6 +16,14 @@ detect_substitutions(
 (\code{\link{compute_homolog_correlations}}).}
 
 \item{delta_threshold}{Minimum delta_r to flag. Default 0.3.}
+
+\item{delta_scale}{Scale on which \code{delta_threshold} is applied. Default
+\code{"z"}: Fisher's transform, \code{atanh(r_paralog) - atanh(r_ortholog)}.
+Correlation is bounded and its sampling variance depends on its own value,
+so a raw difference of 0.3 near r = 0 is not the same quantity as one near
+r = 0.9; the transform makes the two comparable. \code{"r"} thresholds the
+untransformed difference and reproduces the behaviour of versions before
+this argument existed.}
 
 \item{require_ortholog}{If TRUE (default), only score genes that have an
 ortholog correlation (drops paralog-only or NA-ortholog genes).}

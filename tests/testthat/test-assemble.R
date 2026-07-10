@@ -222,3 +222,18 @@ test_that(".clean_ids drops empty and NA ids that would unrestrict a pull", {
   expect_null(paralogswap:::.clean_ids(c("", NA, "  ")))
   expect_null(paralogswap:::.clean_ids(NULL))
 })
+
+test_that("duplication_level survives as_homology_graph and summary()", {
+  e <- data.frame(
+    gene_a = c("RAMP1", "RAMP1"), gene_b = c("RAMP2", "RAMP2"),
+    species_a = c("mmurinus", "mmurinus"), species_b = c("mmurinus", "hsapiens"),
+    relationship = c("paralog", "ortholog"),
+    ortholog_type = c(NA_character_, "one2one"),
+    duplication_level = c("Vertebrata", NA_character_),
+    perc_id = c(29.7, 88.0), stringsAsFactors = FALSE
+  )
+  hg <- as_homology_graph(e)
+  expect_equal(hg$duplication_level[hg$relationship == "paralog"], "Vertebrata")
+  expect_true(is.na(hg$duplication_level[hg$relationship == "ortholog"]))
+  expect_silent(invisible(capture.output(summary(hg))))
+})

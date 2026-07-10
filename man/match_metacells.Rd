@@ -11,7 +11,7 @@ match_metacells(
   homology_graph,
   species_a = NULL,
   species_b = NULL,
-  cor_method = c("spearman", "pearson"),
+  cor_method = c("pearson", "spearman"),
   mutual_k = 5,
   standardize = TRUE,
   verbose = TRUE
@@ -29,7 +29,14 @@ the gene axes.}
 
 \item{species_a, species_b}{Species identifiers matching the graph.}
 
-\item{cor_method}{\code{"spearman"} (default) or \code{"pearson"}.}
+\item{cor_method}{\code{"pearson"} (default) or \code{"spearman"}. Spearman
+was formerly the default, on the grounds that absolute expression scales
+differ across species and platforms. Gene-wise standardization now removes
+that difference directly, so Pearson on standardized profiles is both the
+closer analog of SAMap's preprocessing and the cheaper computation.
+\code{\link{compute_homolog_correlations}} keeps Spearman by default: it
+correlates one gene across metacell pairs, an axis standardization does not
+touch, where a single high-expressing metacell can dominate a Pearson fit.}
 
 \item{mutual_k}{Neighborhood size for mutual k-nearest-neighbor metacell
 matching. Larger values yield more pairs (a denser grid). Capped at the

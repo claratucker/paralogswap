@@ -18,6 +18,15 @@ plot_substitution_elbow(substitutions, delta_threshold = NULL, n_label = 5)
 }
 \value{
 A ggplot object: gene rank (x) vs delta_r (y), threshold line marked.
+\code{delta_z} is the Fisher-transformed difference and \code{delta_r} the
+raw one; both are always reported, and \code{flagged} follows whichever
+\code{delta_scale} names. Rows are sorted by the chosen statistic.
+\code{ortholog_undefined} marks rows reached only under
+\code{require_ortholog = FALSE}, where the ortholog correlation could not be
+computed and zero was substituted for it. For those rows \code{delta_r}
+equals \code{r_paralog} and is not a difference between two measured
+correlations; read them as the \code{ortholog_invariant} class, where the
+substitution is most complete and \code{delta_r} is least meaningful.
 }
 \description{
 Ranks every scored gene by delta_r = r_paralog - r_ortholog (descending) and

@@ -156,7 +156,14 @@ summary.metacells <- function(object, ...) {
 #' @param homology_graph A \code{homology_graph}; its one-to-one orthologs bridge
 #'   the gene axes.
 #' @param species_a,species_b Species identifiers matching the graph.
-#' @param cor_method \code{"spearman"} (default) or \code{"pearson"}.
+#' @param cor_method \code{"pearson"} (default) or \code{"spearman"}. Spearman
+#'   was formerly the default, on the grounds that absolute expression scales
+#'   differ across species and platforms. Gene-wise standardization now removes
+#'   that difference directly, so Pearson on standardized profiles is both the
+#'   closer analog of SAMap's preprocessing and the cheaper computation.
+#'   \code{\link{compute_homolog_correlations}} keeps Spearman by default: it
+#'   correlates one gene across metacell pairs, an axis standardization does not
+#'   touch, where a single high-expressing metacell can dominate a Pearson fit.
 #' @param standardize Center and scale each bridge ortholog across all metacells
 #'   within each species before correlating (default TRUE). Uncentered log-mean
 #'   profiles are dominated by the shared abundance baseline, so every metacell
@@ -184,7 +191,7 @@ summary.metacells <- function(object, ...) {
 match_metacells <- function(metacells_a, metacells_b, correspondence,
                             homology_graph,
                             species_a = NULL, species_b = NULL,
-                            cor_method = c("spearman", "pearson"),
+                            cor_method = c("pearson", "spearman"),
 		            mutual_k = 5,                            
                             standardize = TRUE,
 			    verbose = TRUE) {

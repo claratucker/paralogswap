@@ -10,7 +10,7 @@ match_clusters(
   homology_graph,
   species_a = NULL,
   species_b = NULL,
-  cor_method = c("spearman", "pearson"),
+  cor_method = c("pearson", "spearman"),
   min_correspondence = 0.3,
   center_genes = TRUE,
   scale_genes = TRUE,
@@ -29,8 +29,15 @@ single-element results of \code{\link{cluster_species}}) for species A and B.}
 \code{species_a}/\code{species_b} columns. If NULL, inferred from the graph
 when it contains exactly one cross-species pair.}
 
-\item{cor_method}{\code{"spearman"} (default, robust to cross-species scale
-differences) or \code{"pearson"}.}
+\item{cor_method}{\code{"pearson"} (default) or \code{"spearman"}. Spearman
+was formerly the default, on the grounds that absolute expression scales
+differ across species and platforms. \code{center_genes} and
+\code{scale_genes} now remove that difference directly, so Pearson on
+standardized profiles is both the closer analog of SAMap's preprocessing
+and the cheaper computation. \code{\link{compute_homolog_correlations}}
+keeps Spearman by default: it correlates one gene across metacell pairs,
+an axis standardization does not touch, where a single high-expressing
+metacell can dominate a Pearson fit.}
 
 \item{min_correspondence}{Minimum correlation for a match to be reported.
 Default 0.3; see \code{plot_correspondence_elbow}. Note that this gates the
@@ -53,9 +60,14 @@ of the \code{RNA} assay by default.}
 }
 \value{
 A \code{cluster_correspondence}: data.frame of cluster_a, cluster_b,
-score, reciprocal (logical). Reciprocal best matches passing
-\code{min_correspondence} are marked \code{reciprocal = TRUE}. The full
-correlation matrix is attached as \code{attr(x, "cor_matrix")}.
+score, and three logicals. \code{mutual_best} is TRUE when each cluster is
+the other's highest-scoring partner, a structural property of the
+correlation matrix. \code{passes} is TRUE when the score reaches
+\code{min_correspondence}. \code{reciprocal}, which downstream stages
+consume, is their conjunction. One row per A-cluster: every A-cluster's best
+B-cluster is reported, so absence from the table means the cluster does not
+exist, not that it scored poorly. The full correlation matrix is attached as
+\code{attr(x, "cor_matrix")}.
 }
 \description{
 Determines which cluster in one species corresponds to which in another,

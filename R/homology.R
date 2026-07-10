@@ -506,7 +506,8 @@ connect <- function(sp) {
       id_attr, name_attr,
       paste0(pre, "_paralog_ensembl_gene"),
       paste0(pre, "_paralog_associated_gene_name"),
-      paste0(pre, "_paralog_perc_id")
+      paste0(pre, "_paralog_perc_id"),
+      paste0(pre, "_paralog_subtype")   # taxonomic node of the duplication event
     )
     args <- list(attributes = attrs, mart = mart)
     if (!is.null(restrict_ids)) {
@@ -515,16 +516,18 @@ connect <- function(sp) {
     }
     res <- do.call(biomaRt::getBM, args)
     if (nrow(res) == 0) return(NULL)
-    names(res) <- c("from_id", "from_name", "to_id", "to_name", "perc_id")
+    names(res) <- c("from_id", "from_name", "to_id", "to_name", "perc_id",
+                    "subtype")
     res <- res[!is.na(res$to_id) & res$to_id != "", , drop = FALSE]
     if (nrow(res) == 0) return(NULL)
+    res$subtype[is.na(res$subtype) | !nzchar(trimws(res$subtype))] <- NA_character_
     data.frame(
       gene_a = if (id_type == "ensembl") res$from_id else res$from_name,
       gene_b = if (id_type == "ensembl") res$to_id   else res$to_name,
       species_a = sp, species_b = sp,
       relationship = "paralog",
       ortholog_type = NA_character_,   # paralogs carry no cross-species type
-      duplication_level = NA_character_,
+      duplication_level = res$subtype,  # e.g. "Vertebrata"; the duplication node
       perc_id = res$perc_id,
       confidence = NA,
       source = "ensembl",

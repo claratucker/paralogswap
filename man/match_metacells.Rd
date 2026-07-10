@@ -13,6 +13,7 @@ match_metacells(
   species_b = NULL,
   cor_method = c("spearman", "pearson"),
   mutual_k = 5,
+  standardize = TRUE,
   verbose = TRUE
 )
 }
@@ -34,6 +35,13 @@ the gene axes.}
 matching. Larger values yield more pairs (a denser grid). Capped at the
 number of metacells available in either cluster. Default 5.}
 
+\item{standardize}{Center and scale each bridge ortholog across all metacells
+within each species before correlating (default TRUE). Uncentered log-mean
+profiles are dominated by the shared abundance baseline, so every metacell
+pair scores alike and neighbour selection is decided by noise. Orthologs
+invariant across metacells in either species are dropped. Set FALSE only to
+reproduce the behaviour of versions before this argument existed.}
+
 \item{verbose}{Print progress. Default TRUE.}
 }
 \value{
@@ -41,9 +49,13 @@ A \code{metacell_correspondence}: data.frame of metacell_a,
 metacell_b, cluster_a, cluster_b, score, sorted by cluster then descending
 score. Only mutual k-nearest-neighbor metacell pairs within reciprocally
 matched clusters are retained; an A-metacell may pair with more than one
-B-metacell. Unmatched A-metacells are dropped and counted in
-\code{attr(x, "unmatched")}; the size of the one-to-one ortholog bridge is
-recorded in \code{attr(x, "n_bridge_genes")}.
+B-metacell. Metacells matching nothing are dropped; the number unmatched on
+each side is \code{attr(x, "unmatched")} and the totals are
+\code{attr(x, "n_metacells")}, both named \code{c(a =, b =)}. The number of
+one-to-one orthologs actually used to bridge the gene axes is
+\code{attr(x, "n_bridge_genes")}; under \code{standardize = TRUE} this
+excludes orthologs invariant across metacells, so it may be smaller than the
+number of one-to-one orthologs shared by the two objects.
 }
 \description{
 Within each reciprocally matched cluster pair (from

@@ -326,3 +326,92 @@ p <- ggplot2::ggplot(long, ggplot2::aes(.data$gamma, .data$value,
   attr(p, "curve") <- curve
   p
 }
+
+#' Heatmap of cross-species cluster correspondence
+#'
+#' Renders the full cluster-by-cluster correlation matrix computed by
+#' \code{\link{match_clusters}} and carried on the result as
+#' \code{attr(x, "cor_matrix")}, outlining reciprocal best matches. This is the
+#' visual form of the claim that cross-species correspondence can be read from
+#' expression without cell-type labels.
+#'
+#' Every cell carries a score. \code{match_clusters} correlates every A-cluster
+#' against every B-cluster and uses \code{min_correspondence} only to gate the
+#' \code{reciprocal} flag, so no pair is discarded and no cell is empty. Read a
+#' pale cell as a low correlation, not as missing data.
+#'
+#' With \code{cluster_order = TRUE} rows are permuted so that each A-cluster sits
+#' near the B-cluster it matches best. Block structure that survives this
+#' reordering is real; vertical stripes mean many A-clusters are attracted to one
+#' B-cluster, which reordering cannot hide.
+#'
+#' @param correspondence A \code{cluster_correspondence} from \code{match_clusters}.
+#' @param mark_reciprocal Outline reciprocal best matches. Default TRUE.
+#' @param low,high Fill scale endpoints.
+#' @param show_values Print the score in each tile. Default FALSE.
+#' @param cluster_order Reorder rows by best match. Default TRUE.
+#'
+#' @return A ggplot. Composable with \code{+ theme()} as usual.
+#' @export
+plot_correspondence_heatmap <- function(correspondence,
+                                        mark_reciprocal = TRUE,
+                                        low = "#f7fbff", high = "#08306b",
+                                        show_values = FALSE,
+                                        cluster_order = TRUE) {
+  if (!requireNamespace("ggplot2", quietly = TRUE))
+    stop("plot_correspondence_heatmap requires the 'ggplot2' package.", call. = FALSE)
+
+  cormat <- attr(correspondence, "cor_matrix")
+  if (is.null(cormat))
+    stop("No 'cor_matrix' attribute; this object predates it. Re-run match_clusters().",
+         call. = FALSE)
+
+  recip <- as.data.frame(correspondence)
+  recip <- recip[which(recip$reciprocal), , drop = FALSE]
+
+  # numeric cluster labels sort numerically, not lexically
+  .ord <- function(x) {
+    n <- suppressWarnings(as.numeric(x))
+    if (anyNA(n)) order(x) else order(n)
+  }
+  col_lv <- colnames(cormat)[.ord(colnames(cormat))]
+
+  if (isTRUE(cluster_order)) {
+    best <- match(colnames(cormat)[max.col(cormat, ties.method = "first")], col_lv)
+    row_lv <- rownames(cormat)[order(best, -apply(cormat, 1, max))]
+  } else {
+    row_lv <- rownames(cormat)[.ord(rownames(cormat))]
+  }
+
+  d <- expand.grid(cluster_a = rownames(cormat), cluster_b = colnames(cormat),
+                   stringsAsFactors = FALSE, KEEP.OUT.ATTRS = FALSE)
+  d$score <- as.vector(cormat)   # both column-major; rows vary fastest
+  d$cluster_a <- factor(d$cluster_a, levels = rev(row_lv))
+  d$cluster_b <- factor(d$cluster_b, levels = col_lv)
+
+  bridge <- .bridge_n(correspondence)
+  p <- ggplot2::ggplot(d, ggplot2::aes(x = .data$cluster_b, y = .data$cluster_a)) +
+    ggplot2::geom_tile(ggplot2::aes(fill = .data$score), colour = "grey92") +
+    ggplot2::scale_fill_gradient(low = low, high = high, name = "score") +
+    ggplot2::labs(
+      x = "species B cluster", y = "species A cluster",
+      title = "Cross-species cluster correspondence",
+      subtitle = paste0(nrow(cormat), " x ", ncol(cormat), " clusters, ",
+                        nrow(recip), " reciprocal best matches",
+                        if (!is.null(bridge)) paste0("; bridge of ", bridge,
+                                                     " one2one orthologs") else "")) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(panel.grid = ggplot2::element_blank())
+
+  if (isTRUE(mark_reciprocal) && nrow(recip) > 0) {
+    recip$cluster_a <- factor(recip$cluster_a, levels = rev(row_lv))
+    recip$cluster_b <- factor(recip$cluster_b, levels = col_lv)
+    p <- p + ggplot2::geom_tile(data = recip, fill = NA,
+                                colour = "firebrick", linewidth = 0.7)
+  }
+  if (isTRUE(show_values)) {
+    p <- p + ggplot2::geom_text(ggplot2::aes(label = sprintf("%.2f", .data$score)),
+                                size = 2.2, colour = "grey20")
+  }
+  p
+}

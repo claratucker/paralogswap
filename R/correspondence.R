@@ -15,7 +15,16 @@
 #' @param cor_method \code{"spearman"} (default, robust to cross-species scale
 #'   differences) or \code{"pearson"}.
 #' @param min_correspondence Minimum correlation for a match to be reported.
-#'   Default 0.3; see \code{plot_correspondence_elbow}.
+#'   Default 0.3; see \code{plot_correspondence_elbow}. Note that this gates the
+#'   \code{reciprocal} flag only; every cluster pair is scored and returned.
+#' @param center_genes Subtract each gene's across-cluster mean within each
+#'   species before correlating (default TRUE). Uncentered profiles are dominated
+#'   by the shared abundance baseline and yield near-uniform, uninformative
+#'   scores; set FALSE only to reproduce that behaviour.
+#' @param scale_genes Divide each gene by its across-cluster standard deviation
+#'   within each species (default TRUE), after centering. Centering and scaling
+#'   together reproduce the standardization SAMap applies before manifold
+#'   projection. Genes with zero variance in either species are dropped.
 #' @param assay,slot Expression to average: the log-normalized \code{data} slot
 #'   of the \code{RNA} assay by default.
 #' @param verbose Print progress. Default TRUE.
@@ -30,6 +39,8 @@ match_clusters <- function(clusters_a, clusters_b, homology_graph,
                            species_a = NULL, species_b = NULL,
                            cor_method = c("spearman", "pearson"),
                            min_correspondence = 0.3,
+                           center_genes = TRUE,
+                           scale_genes = TRUE,
                            assay = "RNA", slot = "data",
                            verbose = TRUE) {
   cor_method <- match.arg(cor_method)
@@ -72,6 +83,33 @@ if (isTRUE(verbose)) message("Bridging on ", nrow(o2o),
   # ---- cluster mean-expression profiles over the bridge ---------------------
   prof_a <- .cluster_profiles(obj_a, o2o$gene_a, assay, slot)  # genes x clusters
   prof_b <- .cluster_profiles(obj_b, o2o$gene_b, assay, slot)
+  if (isTRUE(center_genes)) {
+    # Subtract each gene's mean across that species' clusters. Without this,
+    # correlations are dominated by the shared abundance baseline (housekeeping
+    # genes high everywhere), every cluster pair scores 0.5-0.8, and best-match
+    # assignment is decided by third-decimal differences. Centering leaves each
+    # cluster's deviation from its own species' average, which is the quantity
+    # that is comparable across species.
+    prof_a <- prof_a - rowMeans(prof_a)
+    prof_b <- prof_b - rowMeans(prof_b)
+  }
+  if (isTRUE(scale_genes)) {
+    # Divide each gene by its across-cluster SD, so that a gene's vote is its
+    # pattern across clusters rather than its dynamic range. Together with
+    # centering this is the zero-mean/unit-variance standardization SAMap
+    # applies before projecting into the joint space. Genes invariant across
+    # clusters have SD 0 and carry no signal; drop rather than divide by zero.
+    sd_a <- apply(prof_a, 1, stats::sd)
+    sd_b <- apply(prof_b, 1, stats::sd)
+    keep <- sd_a > 0 & sd_b > 0
+    if (sum(keep) < 50)
+      stop("Fewer than 50 bridge genes vary across clusters in both species.",
+           call. = FALSE)
+    if (isTRUE(verbose) && any(!keep))
+      message("Dropping ", sum(!keep), " bridge genes invariant across clusters.")
+    prof_a <- prof_a[keep, , drop = FALSE] / sd_a[keep]
+    prof_b <- prof_b[keep, , drop = FALSE] / sd_b[keep]
+  }
   # rows are aligned: row i of prof_a is gene_a[i], row i of prof_b is its
   # ortholog gene_b[i]. So the matrices share a (species-bridged) gene axis.
   stopifnot(nrow(prof_a) == nrow(prof_b))
@@ -125,8 +163,8 @@ if (isTRUE(verbose)) message("Bridging on ", nrow(o2o),
 
 .cluster_profiles <- function(obj, genes, assay, slot) {
   m <- Seurat::GetAssayData(obj, assay = assay, layer = slot)[genes, , drop = FALSE]
-  cl <- Seurat::Idents(obj)
-  # mean expression per cluster
+  cl <- droplevels(Seurat::Idents(obj))  # drop empty levels: rowMeans over
+  # zero cells yields NaN, which poisons an entire row/column of cormat
   clusters <- levels(cl)
   prof <- vapply(clusters, function(k) {
     cells <- which(cl == k)

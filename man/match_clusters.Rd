@@ -12,6 +12,8 @@ match_clusters(
   species_b = NULL,
   cor_method = c("spearman", "pearson"),
   min_correspondence = 0.3,
+  center_genes = TRUE,
+  scale_genes = TRUE,
   assay = "RNA",
   slot = "data",
   verbose = TRUE
@@ -31,7 +33,18 @@ when it contains exactly one cross-species pair.}
 differences) or \code{"pearson"}.}
 
 \item{min_correspondence}{Minimum correlation for a match to be reported.
-Default 0.3; see \code{plot_correspondence_elbow}.}
+Default 0.3; see \code{plot_correspondence_elbow}. Note that this gates the
+\code{reciprocal} flag only; every cluster pair is scored and returned.}
+
+\item{center_genes}{Subtract each gene's across-cluster mean within each
+species before correlating (default TRUE). Uncentered profiles are dominated
+by the shared abundance baseline and yield near-uniform, uninformative
+scores; set FALSE only to reproduce that behaviour.}
+
+\item{scale_genes}{Divide each gene by its across-cluster standard deviation
+within each species (default TRUE), after centering. Centering and scaling
+together reproduce the standardization SAMap applies before manifold
+projection. Genes with zero variance in either species are dropped.}
 
 \item{assay, slot}{Expression to average: the log-normalized \code{data} slot
 of the \code{RNA} assay by default.}

@@ -157,6 +157,12 @@ summary.metacells <- function(object, ...) {
 #'   the gene axes.
 #' @param species_a,species_b Species identifiers matching the graph.
 #' @param cor_method \code{"spearman"} (default) or \code{"pearson"}.
+#' @param standardize Center and scale each bridge ortholog across all metacells
+#'   within each species before correlating (default TRUE). Uncentered log-mean
+#'   profiles are dominated by the shared abundance baseline, so every metacell
+#'   pair scores alike and neighbour selection is decided by noise. Orthologs
+#'   invariant across metacells in either species are dropped. Set FALSE only to
+#'   reproduce the behaviour of versions before this argument existed.
 #' @param mutual_k Neighborhood size for mutual k-nearest-neighbor metacell
 #'   matching. Larger values yield more pairs (a denser grid). Capped at the
 #'   number of metacells available in either cluster. Default 5.
@@ -166,9 +172,13 @@ summary.metacells <- function(object, ...) {
 #'   metacell_b, cluster_a, cluster_b, score, sorted by cluster then descending
 #'   score. Only mutual k-nearest-neighbor metacell pairs within reciprocally
 #'   matched clusters are retained; an A-metacell may pair with more than one
-#'   B-metacell. Unmatched A-metacells are dropped and counted in
-#'   \code{attr(x, "unmatched")}; the size of the one-to-one ortholog bridge is
-#'   recorded in \code{attr(x, "n_bridge_genes")}.
+#'   B-metacell. Metacells matching nothing are dropped; the number unmatched on
+#'   each side is \code{attr(x, "unmatched")} and the totals are
+#'   \code{attr(x, "n_metacells")}, both named \code{c(a =, b =)}. The number of
+#'   one-to-one orthologs actually used to bridge the gene axes is
+#'   \code{attr(x, "n_bridge_genes")}; under \code{standardize = TRUE} this
+#'   excludes orthologs invariant across metacells, so it may be smaller than the
+#'   number of one-to-one orthologs shared by the two objects.
 #'
 #' @export
 match_metacells <- function(metacells_a, metacells_b, correspondence,
@@ -176,6 +186,7 @@ match_metacells <- function(metacells_a, metacells_b, correspondence,
                             species_a = NULL, species_b = NULL,
                             cor_method = c("spearman", "pearson"),
 		            mutual_k = 5,                            
+                            standardize = TRUE,
 			    verbose = TRUE) {
   cor_method <- match.arg(cor_method)
   stopifnot(inherits(metacells_a, "metacells"),
@@ -201,11 +212,37 @@ match_metacells <- function(metacells_a, metacells_b, correspondence,
   Xa <- as.matrix(metacells_a$data[o2o$gene_a, , drop = FALSE])  # genes x mcA
   Xb <- as.matrix(metacells_b$data[o2o$gene_b, , drop = FALSE])  # genes x mcB
 
+  # ---- standardize each ortholog across ALL metacells, once -----------------
+  # Raw log-mean profiles are dominated by the abundance baseline shared by every
+  # cell type in both species: any two metacells correlate at ~0.6-0.8 and the
+  # choice of neighbours is decided by third-decimal differences. Centering and
+  # scaling each gene leaves each metacell's deviation from its own species'
+  # average, which is the quantity comparable across species. This is the
+  # zero-mean/unit-variance standardization SAMap applies before projection.
+  #
+  # Done ONCE over all metacells, deliberately: standardizing inside the
+  # per-cluster loop below would make a gene's mean depend on which cluster pair
+  # was being visited, so the same metacell would carry different values in
+  # different iterations.
+  if (isTRUE(standardize)) {
+    sda <- apply(Xa, 1, stats::sd)
+    sdb <- apply(Xb, 1, stats::sd)
+    keep <- sda > 0 & sdb > 0
+    if (sum(keep) < 50)
+      stop("Fewer than 50 bridge orthologs vary across metacells in both ",
+           "species; cannot standardize.", call. = FALSE)
+    if (isTRUE(verbose) && any(!keep))
+      message("Dropping ", sum(!keep), " bridge orthologs invariant across metacells.")
+    Xa <- (Xa[keep, , drop = FALSE] - rowMeans(Xa[keep, , drop = FALSE])) / sda[keep]
+    Xb <- (Xb[keep, , drop = FALSE] - rowMeans(Xb[keep, , drop = FALSE])) / sdb[keep]
+    o2o <- o2o[keep, , drop = FALSE]
+  }
+
   meta_a <- metacells_a$meta; meta_b <- metacells_b$meta
   recip <- correspondence[correspondence$reciprocal, , drop = FALSE]
   if (nrow(recip) == 0)
-stop("No mutual-kNN metacell pairs found within matched clusters.",
-         call. = FALSE)
+    stop("No reciprocal cluster matches in `correspondence`; nothing to grain ",
+         "over. Inspect match_clusters() output before rerunning.", call. = FALSE)
   pairs_list <- list()
   n_unmatched_a <- 0L; n_unmatched_b <- 0L
 
@@ -257,11 +294,21 @@ stop("No mutual-kNN metacell pairs found within matched clusters.",
   out <- do.call(rbind, pairs_list); rownames(out) <- NULL
   out <- out[order(out$cluster_a, -out$score), ]
 
-  if (isTRUE(verbose)) message(nrow(out), " matched metacell pairs across ",
-                               nrow(recip), " cluster pairs (",
-                               n_unmatched_a, " A-metacells unmatched).")
+  if (isTRUE(verbose))
+    message(nrow(out), " matched metacell pairs across ", nrow(recip),
+            " cluster pairs; ", length(unique(out$metacell_a)), "/",
+            nrow(metacells_a$meta), " A- and ", length(unique(out$metacell_b)),
+            "/", nrow(metacells_b$meta), " B-metacells used.")
 
-  attr(out, "unmatched") <- c(a = n_unmatched_a)
+  # Count against every metacell, not only those inside a reciprocal cluster
+  # pair. The loop above never visits metacells in unmatched clusters, so
+  # n_unmatched_a undercounts badly (and rises when coverage improves, since
+  # more clusters get visited). Report true coverage.
+  attr(out, "unmatched") <- c(
+    a = nrow(metacells_a$meta) - length(unique(out$metacell_a)),
+    b = nrow(metacells_b$meta) - length(unique(out$metacell_b)))
+  attr(out, "n_metacells") <- c(a = nrow(metacells_a$meta),
+                                b = nrow(metacells_b$meta))
   attr(out, "n_bridge_genes") <- nrow(o2o)
   class(out) <- c("metacell_correspondence", "data.frame")
   out
@@ -276,5 +323,10 @@ summary.metacell_correspondence <- function(object, ...) {
       sprintf("%.2f", max(object$score)), "\n")
   by_cl <- table(paste0(object$cluster_a, "->", object$cluster_b))
   cat("  pairs/cluster range:", min(by_cl), "-", max(by_cl), "\n")
+  n <- attr(object, "n_metacells")   # absent on objects saved before coverage fix
+  if (!is.null(n)) {
+    cat("  metacells used: A", length(unique(object$metacell_a)), "/", n[["a"]],
+        " B", length(unique(object$metacell_b)), "/", n[["b"]], "\n")
+  }
   invisible(object)
 }
